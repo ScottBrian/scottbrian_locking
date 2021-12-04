@@ -1,22 +1,33 @@
 """test_se_lock.py module."""
 
-import pytest
+
+########################################################################
+# Standard Library
+########################################################################
 import math
+import threading
 import time
 from typing import Any, cast, Union, NamedTuple
 
-import threading
-
+########################################################################
+# Third Party
+########################################################################
 from scottbrian_utils.flower_box import print_flower_box_msg as flowers
-from scottbrian_utils.diag_msg import diag_msg
+# from scottbrian_utils.diag_msg import diag_msg
+import pytest
 
+########################################################################
+# Local
+########################################################################
 from scottbrian_locking.se_lock import SELock, SELockShare, SELockExcl
 from scottbrian_locking.se_lock import IncorrectModeSpecified
 from scottbrian_locking.se_lock import AttemptedReleaseOfUnownedLock
+from scottbrian_locking.se_lock import ReleaseDetectedBadOwnerCount
 
-###############################################################################
+
+########################################################################
 # SELock test exceptions
-###############################################################################
+########################################################################
 class ErrorTstSELock(Exception):
     """Base class for exception in this module."""
     pass
@@ -37,9 +48,9 @@ class BadRequestStyleArg(ErrorTstSELock):
     pass
 
 
-###############################################################################
+########################################################################
 # requests_arg fixture
-###############################################################################
+########################################################################
 requests_arg_list = [1, 2, 3]
 
 
@@ -56,9 +67,9 @@ def requests_arg(request: Any) -> int:
     return cast(int, request.param)
 
 
-###############################################################################
+########################################################################
 # seconds_arg fixture
-###############################################################################
+########################################################################
 seconds_arg_list = [0.1, 0.5, 1, 2]
 
 
@@ -75,10 +86,9 @@ def seconds_arg(request: Any) -> Union[int, float]:
     return cast(Union[int, float], request.param)
 
 
-
-###############################################################################
+########################################################################
 # request_style_arg fixture
-###############################################################################
+########################################################################
 request_style_arg_list = [0, 1, 2, 3, 4, 5, 6]
 
 
@@ -95,17 +105,17 @@ def request_style_arg(request: Any) -> int:
     return cast(int, request.param)
 
 
-###############################################################################
+########################################################################
 # TestSELockBasic class to test SELock methods
-###############################################################################
+########################################################################
 class TestSELockErrors:
     """TestSELock class."""
 
     def test_se_lock_bad_args(self) -> None:
         """test_se_lock using bad arguments."""
-        #######################################################################
+        ################################################################
         # bad requests
-        #######################################################################
+        ################################################################
         with pytest.raises(IncorrectModeSpecified):
             a_lock = SELock()
             a_lock.obtain(mode=0)
@@ -114,15 +124,21 @@ class TestSELockErrors:
             a_lock = SELock()
             a_lock.release()
 
+        # with pytest.raises(ReleaseDetectedBadOwnerCount):
+        #     a_lock = SELock()
+        #     a_lock.obtain(mode=SELock.EXCL)
+        #     a_lock.owner_count = -2
+        #     a_lock.release()
 
-###############################################################################
+
+########################################################################
 # TestSELockBasic class to test SELock methods
-###############################################################################
+########################################################################
 class TestSELockBasic:
 
-    ###########################################################################
+    ####################################################################
     # len checks
-    ###########################################################################
+    ####################################################################
     def test_se_lock_len(self) -> None:
         """Test the len of se_lock.
 
@@ -158,34 +174,34 @@ class TestSELockBasic:
         a_event2 = threading.Event()
 
         with SELockShare(a_lock):
-            assert len(a_lock) == 0
+            assert len(a_lock) == 1
             f1_thread = threading.Thread(target=excl_func1, args=(a_lock,
                                                                   a_event1))
             f1_thread.start()
             time.sleep(1)
-            assert len(a_lock) == 1
+            assert len(a_lock) == 2
 
             f2_thread = threading.Thread(target=excl_func2, args=(a_lock,
                                                                   a_event2))
             f2_thread.start()
             time.sleep(1)
-            assert len(a_lock) == 2
+            assert len(a_lock) == 3
 
         time.sleep(1)
-        assert len(a_lock) == 1
+        assert len(a_lock) == 2
 
         a_event1.set()
         f1_thread.join()
         time.sleep(1)
-        assert len(a_lock) == 0
+        assert len(a_lock) == 1
 
         a_event2.set()
         f2_thread.join()
         assert len(a_lock) == 0
 
-    ###########################################################################
+    ####################################################################
     # repr
-    ###########################################################################
+    ####################################################################
     def test_se_lock_repr(self) -> None:
         """test_se_lock repr mode 1 with various requests and seconds.
 
@@ -201,8 +217,6 @@ class TestSELockBasic:
         assert repr(a_se_lock) == expected_repr_str
 
 
-
-
 ###############################################################################
 # TestSELock class
 ###############################################################################
@@ -213,7 +227,7 @@ class TestSELock:
     locking.
 
     We will try combinations of shared and exclusive obtains and verify that
-    the order is requests is maintained.
+    the order in requests is maintained.
 
     Scenario:
        1) obtain 0 to 3 shared - verify
@@ -266,11 +280,6 @@ class TestSELock:
                                                          ))
             a_thread.start()
             group1.append(ThreadEvent(a_thread, a_event))
-
-
-
-
-
 
     ###########################################################################
     # test_se_lock_sync

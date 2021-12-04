@@ -13,16 +13,17 @@ and write shared resources in a multi-threaded application.
 
 
 >>> from scottbrian_locking.se_lock import SELock
->>> a = 0
 >>> a_lock = SELock()
->>> # Get lock in shared mode
->>> with a_lock(SELock.SHARE):  # read a
->>>     print(a)
 
 >>> # Get lock in exclusive mode
 >>> with a_lock(SELock.EXCL):  # write to a
 >>>     a = 1
 >>>     print(a)
+
+>>> # Get lock in shared mode
+>>> with a_lock(SELock.SHARE):  # read a
+>>>     print(a)
+
 
 
 
