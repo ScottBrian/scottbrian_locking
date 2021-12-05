@@ -232,7 +232,7 @@ class SELock:
                                   event=wait_event,
                                   thread=threading.current_thread())
             )
-            if self.owner_wait_q[0].thread == threading.current_thread():
+            if self.owner_wait_q[0].thread is threading.current_thread():
                 return
             if mode == SELock.SHARE:
                 exclusive_waiter_found = False
@@ -333,7 +333,7 @@ class SELock:
             for idx, item in enumerate(self.owner_wait_q):
                 if (excl_idx == -1) and (item.mode == SELock.EXCL):
                     excl_idx = idx
-                if item.thread == threading.current_thread():
+                if item.thread is threading.current_thread():
                     item_idx = idx
                     item_mode = item.mode
                     break

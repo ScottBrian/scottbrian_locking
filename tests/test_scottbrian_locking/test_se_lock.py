@@ -4,6 +4,8 @@
 ########################################################################
 # Standard Library
 ########################################################################
+from dataclasses import dataclass
+import logging
 import math
 import threading
 import time
@@ -23,6 +25,13 @@ from scottbrian_locking.se_lock import SELock, SELockShare, SELockExcl
 from scottbrian_locking.se_lock import IncorrectModeSpecified
 from scottbrian_locking.se_lock import AttemptedReleaseOfUnownedLock
 from scottbrian_locking.se_lock import ReleaseDetectedBadOwnerCount
+
+
+########################################################################
+# Set up logging
+########################################################################
+logger = logging.getLogger(__name__)
+logger.debug('about to start the tests')
 
 
 ########################################################################
@@ -56,6 +65,64 @@ requests_arg_list = [1, 2, 3]
 
 @pytest.fixture(params=requests_arg_list)  # type: ignore
 def requests_arg(request: Any) -> int:
+    """Using different requests.
+
+    Args:
+        request: special fixture that returns the fixture params
+
+    Returns:
+        The params values are returned one at a time
+    """
+    return cast(int, request.param)
+
+
+########################################################################
+# number_requests_arg fixture
+########################################################################
+number_requests_arg_list = [0, 1, 2, 3]
+
+
+@pytest.fixture(params=number_requests_arg_list)  # type: ignore
+def num_share_requests1_arg(request: Any) -> int:
+    """Using different requests.
+
+    Args:
+        request: special fixture that returns the fixture params
+
+    Returns:
+        The params values are returned one at a time
+    """
+    return cast(int, request.param)
+
+
+@pytest.fixture(params=number_requests_arg_list)  # type: ignore
+def num_share_requests2_arg(request: Any) -> int:
+    """Using different requests.
+
+    Args:
+        request: special fixture that returns the fixture params
+
+    Returns:
+        The params values are returned one at a time
+    """
+    return cast(int, request.param)
+
+
+@pytest.fixture(params=number_requests_arg_list)  # type: ignore
+def num_excl_requests1_arg(request: Any) -> int:
+    """Using different requests.
+
+    Args:
+        request: special fixture that returns the fixture params
+
+    Returns:
+        The params values are returned one at a time
+    """
+    return cast(int, request.param)
+
+
+@pytest.fixture(params=number_requests_arg_list)  # type: ignore
+def num_excl_requests2_arg(request: Any) -> int:
     """Using different requests.
 
     Args:
@@ -139,65 +206,92 @@ class TestSELockBasic:
     ####################################################################
     # len checks
     ####################################################################
-    def test_se_lock_len(self) -> None:
+    def test_se_lock_len(self,
+                         num_share_requests1_arg: int,
+                         num_excl_requests1_arg: int,
+                         num_share_requests2_arg: int,
+                         num_excl_requests2_arg: int) -> None:
         """Test the len of se_lock.
 
         Args:
-            requests_arg: fixture that provides args
-            mode_arg: se_lock mode to use
+            num_share_requests1_arg: number of first share requests
+            num_excl_requests1_arg: number of first excl requests
+            num_share_requests2_arg: number of second share requests
+            num_excl_requests2_arg: number of second excl requests
 
         """
         # create a se_lock and add some waiters
-
-        def excl_func1(a_se_lock, a_event1) -> None:
-            """Function to wait for exclusive lock.
-
-            Args:
-                a_se_lock: instance of SELock
-            """
-            with SELockExcl(a_se_lock):
-                print('excl_func1 got lock exclusive')
-                a_event1.wait()
-
-        def excl_func2(a_se_lock, a_event2) -> None:
-            """Function to wait for exclusive lock.
+        def share_func1(a_event, num_reqs_made) -> None:
+            """Function to request share lock and wait.
 
             Args:
-                a_se_lock: instance of SELock
+                a_event: event to wait on
+
             """
-            with SELockExcl(a_se_lock):
-                print('excl_func2 got lock exclusive')
-                a_event2.wait()
+            with SELockShare(a_lock):
+                # logger.debug(f'share_func1 num_reqs = {num_reqs_made},'
+                #              f' len(a_lock) = {len(a_lock)}')
+                a_event.wait()
+
+        def excl_func1(a_event, num_reqs_made) -> None:
+            """Function to request lock and wait.
+
+            Args:
+                a_event: event to wait on
+
+            """
+            with SELockExcl(a_lock):
+                # logger.debug(f'excl_func1 num_reqs = {num_reqs_made}, '
+                #              f'len(a_lock) = {len(a_lock)}')
+                a_event.wait()
+
+        @dataclass
+        class ThreadEvent:
+            thread: threading.Thread
+            event: threading.Event
 
         a_lock = SELock()
-        a_event1 = threading.Event()
-        a_event2 = threading.Event()
 
-        with SELockShare(a_lock):
-            assert len(a_lock) == 1
-            f1_thread = threading.Thread(target=excl_func1, args=(a_lock,
-                                                                  a_event1))
-            f1_thread.start()
-            time.sleep(1)
-            assert len(a_lock) == 2
+        thread_event_list = []
+        num_requests_made = 0
+        num_requests_list = [num_share_requests1_arg,
+                             num_excl_requests1_arg,
+                             num_share_requests2_arg,
+                             num_excl_requests2_arg]
 
-            f2_thread = threading.Thread(target=excl_func2, args=(a_lock,
-                                                                  a_event2))
-            f2_thread.start()
-            time.sleep(1)
-            assert len(a_lock) == 3
+        for shr_excl in range(4):
+            num_requests = num_requests_list[shr_excl]
+            for idx in range(num_requests):
+                num_requests_made += 1
+                a_event1 = threading.Event()
+                if shr_excl == 0 or shr_excl == 2:
+                    a_thread = threading.Thread(target=share_func1,
+                                                args=(a_event1,
+                                                      num_requests_made))
+                else:
+                    a_thread = threading.Thread(target=excl_func1,
+                                                args=(a_event1,
+                                                      num_requests_made))
+                a_thread.start()
+                while ((not a_lock.owner_wait_q) or
+                        (not a_lock.owner_wait_q[-1].thread is a_thread)):
+                    time.sleep(0.1)
+                logger.debug(f'shr_excl = {shr_excl}, '
+                             f'idx = {idx}, '
+                             f'num_requests_made = {num_requests_made}, '
+                             f'len(a_lock) = {len(a_lock)}')
+                assert len(a_lock) == num_requests_made
+                # save for release
+                thread_event_list.append(ThreadEvent(thread=a_thread,
+                                                     event=a_event1))
 
-        time.sleep(1)
-        assert len(a_lock) == 2
-
-        a_event1.set()
-        f1_thread.join()
-        time.sleep(1)
-        assert len(a_lock) == 1
-
-        a_event2.set()
-        f2_thread.join()
-        assert len(a_lock) == 0
+        for thread_event in thread_event_list:
+            while not a_lock.owner_wait_q[0].thread is thread_event.thread:
+                time.sleep(0.1)
+            thread_event.event.set()
+            thread_event.thread.join()
+            num_requests_made -= 1
+            assert len(a_lock) == num_requests_made
 
     ####################################################################
     # repr
