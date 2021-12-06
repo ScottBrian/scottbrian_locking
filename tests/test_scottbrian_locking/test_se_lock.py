@@ -317,11 +317,11 @@ class TestSELockBasic:
 class TestSELock:
     """Class TestSELock.
 
-    The following section tests various scenarios of shared and exclusive
-    locking.
+    The following section tests various scenarios of shared and
+    exclusive locking.
 
-    We will try combinations of shared and exclusive obtains and verify that
-    the order in requests is maintained.
+    We will try combinations of shared and exclusive obtains and verify
+    that the order in requests is maintained.
 
     Scenario:
        1) obtain 0 to 3 shared - verify
@@ -335,45 +335,131 @@ class TestSELock:
     # test_se_lock_async
     ###########################################################################
     def test_se_lock_no_with(self,
-                             num_share_group1: int,
-                             num_excl_group2: int,
-                             num_share_group3: int,
-                             num_excl_group4: int
-                             ) -> None:
+                             num_share_requests1_arg: int,
+                             num_excl_requests1_arg: int,
+                             num_share_requests2_arg: int,
+                             num_excl_requests2_arg: int) -> None:
         """Method to test se_lock without using with context manager.
 
         Args:
-            num_share_group1: number of shared obtains to do for group1
-            num_excl_group2: number of exclusive obtains to do for group2
-            num_share_group3: number of shared obtains to do for group3
-            num_excl_group4: number of exclusive obtains to do for group4
-        """
-        class ThreadEvent(NamedTuple):
-            thread: threading.Thread
-            event: threading.Event
+            num_share_requests1_arg: number of first share requests
+            num_excl_requests1_arg: number of first excl requests
+            num_share_requests2_arg: number of second share requests
+            num_excl_requests2_arg: number of second excl requests
 
-        def f1(a_lock, a_event, mode):
+        """
+        def f1(a_event, mode):
             """Function to get the lock and wait.
 
             Args:
-                a_lock: instance of SELock
                 a_event: instance of threading.Event
                 mode: shared or exclusive
             """
             a_lock.obtain(mode=mode)
+            owner_thread_list.append(
+                ThreadEvent(thread=threading.current_thread(),
+                            event=a_event,
+                            mode=mode,
+                            exp_owner=True))
             a_event.wait()
             a_lock.release()
 
+        @dataclass
+        class ThreadEvent:
+            thread: threading.Thread
+            event: threading.Event
+            mode: int
+            exp_owner: bool
+
         a_lock = SELock()
-        group1 = []
-        for idx in range(num_share_group1):
-            a_event = threading.Event()
-            a_thread = threading.Thread(target=f1, args=(a_lock,
-                                                         a_event,
-                                                         SELock.SHARE
-                                                         ))
-            a_thread.start()
-            group1.append(ThreadEvent(a_thread, a_event))
+
+        thread_event_list = []
+        owner_thread_list = []
+
+        num_requests_made = 0
+        num_requests_list = [num_share_requests1_arg,
+                             num_excl_requests1_arg,
+                             num_share_requests2_arg,
+                             num_excl_requests2_arg]
+        if num_share_requests1_arg:
+            num_initial_owners = num_share_requests1_arg
+            initial_owner_mode = SELock.SHARE
+        elif num_excl_requests1_arg:
+            num_initial_owners = 1
+            initial_owner_mode = SELock.EXCL
+        elif num_share_requests2_arg:
+            num_initial_owners = num_share_requests2_arg
+            initial_owner_mode = SELock.SHARE
+        elif num_excl_requests2_arg:
+            num_initial_owners = 1
+            initial_owner_mode = SELock.EXCL
+        else:
+            num_initial_owners = 0
+            initial_owner_mode = None
+
+        for shr_excl in range(4):
+            num_requests = num_requests_list[shr_excl]
+            for idx in range(num_requests):
+                num_requests_made += 1
+                if num_requests_made <= num_initial_owners:
+                    exp_owner = True
+                else:
+                    exp_owner = False
+                a_event1 = threading.Event()
+                if shr_excl == 0 or shr_excl == 2:
+                    a_thread = threading.Thread(target=f1,
+                                                args=(a_event1,
+                                                      SELock.SHARE))
+                else:
+                    a_thread = threading.Thread(target=f1,
+                                                args=(a_event1,
+                                                      SELock.EXCL))
+                a_thread.start()
+
+                # make sure the request has been queued
+                while ((not a_lock.owner_wait_q) or
+                       (not a_lock.owner_wait_q[-1].thread is a_thread)):
+                    time.sleep(0.1)
+                logger.debug(f'shr_excl = {shr_excl}, '
+                             f'idx = {idx}, '
+                             f'num_requests_made = {num_requests_made}, '
+                             f'len(a_lock) = {len(a_lock)}')
+                assert len(a_lock) == num_requests_made
+                # save for release
+                if shr_excl == 0 or shr_excl == 2:
+                    thread_event_list.append(ThreadEvent(thread=a_thread,
+                                                         event=a_event1,
+                                                         mode=SELock.SHARE,
+                                                         exp_owner=exp_owner))
+                else:
+                    thread_event_list.append(ThreadEvent(thread=a_thread,
+                                                         event=a_event1,
+                                                         mode=SELock.EXCL,
+                                                         exp_owner=exp_owner))
+                # verify
+                assert a_lock.owner_wait_q[-1].thread is a_thread
+                assert not a_lock.owner_wait_q[-1].event.is_set()
+
+        while thread_event_list:
+            for idx, thread_event in enumerate(thread_event_list):
+                if idx + 1 <= num_initial_owners:
+                    assert thread_event.thread == owner_thread_list[idx].thread
+                    # we expect the event to not have been posted
+                    assert not thread_event.event.is_set()
+                    assert thread_event.mode == owner_thread_list[idx].mode
+                    assert thread_event.mode == initial_owner_mode
+                    assert thread_event.exp_owner is True
+
+            thread_event = thread_event_list.pop(0)
+            owner_thread_list.pop(0)
+            thread_event.event.set()  # tell owner to release and return
+            thread_event.thread.join()  # ensure release is complete
+            num_initial_owners -= 1
+            num_requests_made -= 1
+            if thread_event_list:  # if more to go
+                while not owner_thread_list:  # wait for next owner
+                    time.sleep(0.1)
+            assert len(a_lock) == num_requests_made
 
     ###########################################################################
     # test_se_lock_sync

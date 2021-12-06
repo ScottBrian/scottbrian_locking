@@ -104,7 +104,7 @@ class SELock:
     resources in a multi-threaded application.
     """
 
-    class LockWaiter(NamedTuple):
+    class LockOwnerWaiter(NamedTuple):
         """NamedTuple for the lock request queue item."""
         mode: int
         event: threading.Event
@@ -132,20 +132,18 @@ class SELock:
         ################################################################
         # Set vars
         ################################################################
-        # the se_lock_lock is used to protect the owner_count which is
-        # the actual locking mechanism
+        # the se_lock_lock is used to protect the owner_waiter_q 
         self.se_lock_lock = threading.Lock()
 
-        # the owner count is the lock mechanism:
-        # A value of 0 means the lock is free.
-        # A value greater than zero means the lock is held shared by
-        # the number of threads indicated in the value.
-        # A value of -1 means the lock is held exclusive.
-        self.owner_count = 0
-
-        # when a request is blocked for the lock, it is represented on
-        # the owner_wait_q until the lock is available
-        self.owner_wait_q: list[SELock.LockWaiter] = []
+        # When a request is made for the lock, a LockOwnerWaiter object
+        # is placed on the owner_waiter_q and remains there until a
+        # lock release is done. The LockOwnerWaiter contains the
+        # requester thread and an event. If the requester needs to wait
+        # for the lock, the event will be set to wake the requester as
+        # soon as the lock is assigned to the requester. Other waiting
+        # requesters will periodically test the owner thread to ensure
+        # the owner is still alive.
+        self.owner_wait_q: list[SELock.LockOwnerWaiter] = []
 
     ####################################################################
     # len
@@ -208,27 +206,13 @@ class SELock:
 
         """
         with self.se_lock_lock:
-            # if mode == SELock.EXCL:
-            #     if self.owner_count == 0:
-            #         self.owner_count = -1
-            #         return
-            # elif mode == SELock.SHARE:  # obtain share mode
-            #     if ((self.owner_count == 0)
-            #             or ((self.owner_count > 0) and (not self.owner_wait_q))):
-            #         self.owner_count += 1
-            #         return
-            # else:
-            #     raise IncorrectModeSpecified('For SELock obtain, the mode '
-            #                                  'must be specified as either '
-            #                                  'SELock.SHARE or SELock.EXCL')
-
             if mode not in (SELock.EXCL, SELock.SHARE):
                 raise IncorrectModeSpecified(
                     'For SELock obtain, the mode must be specified as ' 
                     'either SELock.SHARE or SELock.EXCL')
             wait_event = threading.Event()
             self.owner_wait_q.append(
-                SELock.LockWaiter(mode=mode,
+                SELock.LockOwnerWaiter(mode=mode,
                                   event=wait_event,
                                   thread=threading.current_thread())
             )
@@ -268,7 +252,6 @@ class SELock:
                     'thus never release the lock.'
                 )
 
-
     ####################################################################
     # release
     ####################################################################
@@ -290,43 +273,6 @@ class SELock:
               lock.
         """
         with self.se_lock_lock:
-            # The owner_count is -1 if owned exclusive, or > 0 if owned
-            # shared. The owner count should not be zero here since we
-            # are releasing the lock.
-            # if self.owner_count == 0:
-            #     raise AttemptedReleaseOfUnownedLock(
-            #         'A release of the SELock was attempted when the '
-            #         'owner count was zero which indicates no owners '
-            #         'currently hold the lock.')
-            #
-            # if self.owner_count > 0:
-            #     self.owner_count -= 1  # one less shared owner
-            # elif self.owner_count == -1:  # owned exclusive
-            #     self.owner_count = 0
-            # else:  # any other value is an error
-            #     raise ReleaseDetectedBadOwnerCount(
-            #         'An attempted release of the SELock discovered an '
-            #         f'owner count of {self.owner_count} which is not a '
-            #         'valid value.'
-            #     )
-            #
-            # # if lock now free, handle any waiters
-            # if (self.owner_count == 0) and self.owner_wait_q:
-            #     if self.owner_wait_q[0].mode == SELock.EXCL:
-            #         waiter = self.owner_wait_q.pop(0)
-            #         self.owner_count = -1
-            #         waiter.event.set()  # wake up the exclusive waiter
-            #         return  # all done
-            #     # if we are here, we have one of more share waiters
-            #     while self.owner_wait_q:
-            #         # if we come to an exclusive waiter, then we are
-            #         # done for now
-            #         if self.owner_wait_q[0].mode == SELock.EXCL:
-            #             return
-            #         waiter = self.owner_wait_q.pop(0)
-            #         self.owner_count += 1
-            #         waiter.event.set()  # wake up shared waiter
-
             excl_idx = -1
             item_idx = -1
             item_mode = SELock.EXCL
@@ -392,6 +338,7 @@ class SELock:
                             return
                         # wake up shared waiter
                         item.event.set()
+
 
 ########################################################################
 # SELock Context Manager for Shared Control
