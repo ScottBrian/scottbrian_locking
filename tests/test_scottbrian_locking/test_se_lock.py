@@ -135,6 +135,44 @@ def num_excl_requests2_arg(request: Any) -> int:
 
 
 ########################################################################
+# release_position_arg fixture
+########################################################################
+release_position_arg_list = [0, 1, 2]
+
+
+@pytest.fixture(params=release_position_arg_list)  # type: ignore
+def release_position_arg(request: Any) -> int:
+    """Using different release positions.
+
+    Args:
+        request: special fixture that returns the fixture params
+
+    Returns:
+        The params values are returned one at a time
+    """
+    return cast(int, request.param)
+
+
+########################################################################
+# use_context_arg fixture
+########################################################################
+use_context_arg_list = [0, 1, 2]
+
+
+@pytest.fixture(params=use_context_arg_list)  # type: ignore
+def use_context_arg(request: Any) -> int:
+    """Using different release positions.
+
+    Args:
+        request: special fixture that returns the fixture params
+
+    Returns:
+        The params values are returned one at a time
+    """
+    return cast(int, request.param)
+
+
+########################################################################
 # seconds_arg fixture
 ########################################################################
 seconds_arg_list = [0.1, 0.5, 1, 2]
@@ -334,11 +372,13 @@ class TestSELock:
     ###########################################################################
     # test_se_lock_async
     ###########################################################################
-    def test_se_lock_non_context(self,
-                                 num_share_requests1_arg: int,
-                                 num_excl_requests1_arg: int,
-                                 num_share_requests2_arg: int,
-                                 num_excl_requests2_arg: int) -> None:
+    def test_se_lock_combos(self,
+                            num_share_requests1_arg: int,
+                            num_excl_requests1_arg: int,
+                            num_share_requests2_arg: int,
+                            num_excl_requests2_arg: int,
+                            release_position_arg: int,
+                            use_context_arg: int) -> None:
         """Method to test se_lock without using context manager.
 
         Args:
@@ -346,11 +386,14 @@ class TestSELock:
             num_excl_requests1_arg: number of first excl requests
             num_share_requests2_arg: number of second share requests
             num_excl_requests2_arg: number of second excl requests
-
+            release_position_arg: indicates the position among the lock
+                                    owners that will release the lock
+            use_context_arg: indicate whether to use context manager
+                               to request the lock
         """
         num_groups = 4
 
-        def f1(a_event, mode, req_num):
+        def f1(a_event, mode, req_num, use_context: bool):
             """Function to get the lock and wait.
 
             Args:
@@ -359,18 +402,38 @@ class TestSELock:
                 req_num: request number assigned
 
             """
-            a_lock.obtain(mode=mode)
+            def f1_verify():
+                for f1_item in thread_event_list:
+                    if f1_item.req_num == req_num:
+                        assert f1_item.thread is threading.current_thread()
+                        assert f1_item.mode == mode
+                        assert f1_item.lock_obtained is False
+                        f1_item.lock_obtained = True
+                        break
 
-            for f1_item in thread_event_list:
-                if f1_item.req_num == req_num:
-                    assert f1_item.thread is threading.current_thread()
-                    assert f1_item.mode == mode
-                    assert f1_item.exp_owner is False
-                    f1_item.exp_owner = True
-                    break
+            if use_context:
+                if mode == SELock.SHARE:
+                    with SELockShare(a_lock):
+                        f1_verify()
+                        a_event.wait()
+                else:
+                    with SELockExcl(a_lock):
+                        f1_verify()
+                        a_event.wait()
 
-            a_event.wait()
-            a_lock.release()
+            else:
+                a_lock.obtain(mode=mode)
+                f1_verify()
+                # for f1_item in thread_event_list:
+                #     if f1_item.req_num == req_num:
+                #         assert f1_item.thread is threading.current_thread()
+                #         assert f1_item.mode == mode
+                #         assert f1_item.lock_obtained is False
+                #         f1_item.lock_obtained = True
+                #         break
+
+                a_event.wait()
+                a_lock.release()
 
         @dataclass
         class ThreadEvent:
@@ -378,7 +441,7 @@ class TestSELock:
             event: threading.Event
             mode: int
             req_num: int
-            exp_owner: bool
+            lock_obtained: bool
 
         a_lock = SELock()
 
@@ -393,7 +456,8 @@ class TestSELock:
         if num_share_requests1_arg:
             num_initial_owners = num_share_requests1_arg
             initial_owner_mode = SELock.SHARE
-
+            if num_excl_requests1_arg == 0:
+                num_initial_owners += num_share_requests2_arg
         elif num_excl_requests1_arg:
             num_initial_owners = 1
             initial_owner_mode = SELock.EXCL
@@ -406,9 +470,6 @@ class TestSELock:
         else:
             num_initial_owners = 0
             initial_owner_mode = None
-        if num_share_requests1_arg > 0 and num_excl_requests1_arg == 0:
-            num_initial_owners += num_share_requests2_arg
-
 
         for shr_excl in range(num_groups):
             num_requests = num_requests_list[shr_excl]
@@ -419,16 +480,28 @@ class TestSELock:
                     req_mode = SELock.SHARE
                 else:
                     req_mode = SELock.EXCL
+
+                if use_context_arg == 0:
+                    use_context = False
+                elif use_context_arg == 1:
+                    use_context = True
+                else:
+                    if request_number % 2 == 0:
+                        use_context = False
+                    else:
+                        use_context = True
+
                 a_thread = threading.Thread(target=f1,
                                             args=(a_event1,
                                                   req_mode,
-                                                  request_number))
-                # save for release
+                                                  request_number,
+                                                  use_context))
+                # save for verification and release
                 thread_event_list.append(ThreadEvent(thread=a_thread,
                                                      event=a_event1,
                                                      mode=req_mode,
                                                      req_num=request_number,
-                                                     exp_owner=False))
+                                                     lock_obtained=False))
 
                 a_thread.start()
 
@@ -451,24 +524,28 @@ class TestSELock:
         work_shr2 = num_share_requests2_arg
         work_excl2 = num_excl_requests2_arg
         while thread_event_list:
-            num_owners = 0
+            exp_num_owners = 0
             if work_shr1:
-                num_owners = work_shr1
+                exp_num_owners = work_shr1
+                if work_excl1 == 0:
+                    exp_num_owners += work_shr2
             elif work_excl1:
-                num_owners = 1
+                exp_num_owners = 1
             elif work_shr2:
-                num_owners = work_shr2
+                exp_num_owners = work_shr2
             elif work_excl2:
-                num_owners = 1
-            if work_shr1 > 0 and work_excl1 == 0:
-                num_owners += work_shr2
-            num_owners_found = 0
-            while num_owners_found < num_owners:
-                time.sleep(0.1)
-                num_owners_found = 0
-                for idx in range(num_owners):  # wait for next owners
-                    if thread_event_list[idx].exp_owner:
-                        num_owners_found += 1
+                exp_num_owners = 1
+
+            while True:
+                exp_num_owners_found = 0
+                for idx in range(exp_num_owners):  # wait for next owners
+                    if thread_event_list[idx].lock_obtained:
+                        exp_num_owners_found += 1
+                    else:
+                        break
+                if exp_num_owners_found == exp_num_owners:
+                    break
+                time.sleep(0.0001)
 
             for idx, thread_event in enumerate(thread_event_list):
                 assert thread_event.thread == thread_event_list[idx].thread
@@ -480,15 +557,16 @@ class TestSELock:
                     # we expect the event to not have been posted
                     assert not a_lock.owner_wait_q[idx].event.is_set()
                     assert thread_event.mode == initial_owner_mode
-                    assert thread_event.exp_owner is True
-                elif idx + 1 <= num_owners:
+                    assert thread_event.lock_obtained is True
+                elif idx + 1 <= exp_num_owners:
                     assert a_lock.owner_wait_q[idx].event.is_set()
-                    assert thread_event.exp_owner is True
+                    assert thread_event.lock_obtained is True
                 else:
                     assert not a_lock.owner_wait_q[idx].event.is_set()
-                    assert thread_event.exp_owner is False
+                    assert thread_event.lock_obtained is False
 
-            thread_event = thread_event_list.pop(0)
+            release_position = min(release_position_arg, exp_num_owners - 1)
+            thread_event = thread_event_list.pop(release_position)
 
             thread_event.event.set()  # tell owner to release and return
             thread_event.thread.join()  # ensure release is complete
