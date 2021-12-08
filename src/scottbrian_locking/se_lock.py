@@ -64,8 +64,13 @@ class SELockError(Exception):
     pass
 
 
-class IncorrectModeSpecified(SELockError):
-    """SELock exception for an incorrect mode specification."""
+class AttemptedReleaseByExclusiveWaiter(SELockError):
+    """SELock exception for attempted release by exclusive waiter."""
+    pass
+
+
+class AttemptedReleaseBySharedWaiter(SELockError):
+    """SELock exception for attempted release by shared waiter."""
     pass
 
 
@@ -74,23 +79,13 @@ class AttemptedReleaseOfUnownedLock(SELockError):
     pass
 
 
-class ReleaseDetectedBadOwnerCount(SELockError):
-    """SELock exception for bad owner count."""
+class IncorrectModeSpecified(SELockError):
+    """SELock exception for an incorrect mode specification."""
     pass
 
 
 class SELockOwnerNotAlive(SELockError):
     """SELock exception for lock owner not alive."""
-    pass
-
-
-class AttemptedReleaseByExclusiveWaiter(SELockError):
-    """SELock exception for attempted release by exclusive waiter."""
-    pass
-
-
-class AttemptedReleaseBySharedWaiter(SELockError):
-    """SELock exception for attempted release by shared waiter."""
     pass
 
 
@@ -246,11 +241,24 @@ class SELock:
         while True:
             if wait_event.wait(timeout=10):
                 return
+
+            # we check first without holding the se_lock_lock
             if not self.owner_wait_q[0].thread.is_alive():
-                raise SELockOwnerNotAlive(
-                    'The owner of the SELock is not alive and will '
-                    'thus never release the lock.'
-                )
+                # We need to confirm while holding the se_lock_lock
+                # to cover the case where we get the current lock owner
+                # thread and call the is_alive method and just as we
+                # call the lock is released by the owner who then exits
+                # and is no longer alive. Meanwhile, the lock has a new
+                # owner (possibly us) who is alive. Getting the
+                # se_lock_lock here ensures the current lock owner is
+                # not allowed to do a release while we are checking
+                # whether it is alive.
+                with self.se_lock_lock:
+                    if not self.owner_wait_q[0].thread.is_alive():
+                        raise SELockOwnerNotAlive(
+                            'The owner of the SELock is not alive and will '
+                            'thus never release the lock. '
+                            f'Owner thread = {self.owner_wait_q[0]}')
 
     ####################################################################
     # release
