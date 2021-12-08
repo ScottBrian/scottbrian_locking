@@ -161,7 +161,7 @@ class ExpLogMsgs:
                     req: str,
                     ret_code: Optional[bool] = None,
                     code: Optional[Any] = None,
-                    pair: Optional[List[str]] = None,
+                    pair: Optional[list[str]] = None,
                     group_name: Optional[str] = 'group1'
                     ) -> None:
         """Add an expected request message to the expected log messages.

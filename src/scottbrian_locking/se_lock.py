@@ -14,13 +14,14 @@ and write shared resources in a multi-threaded application.
 >>> from scottbrian_locking.se_lock import SELock
 >>> a_lock = SELock()
 >>> # Get lock in exclusive mode
->>> with a_lock(SELock.EXCL):  # write to a
->>>     a = 1
->>>     print(f'under exclusive lock, a = {a} ')
->>> # Get lock in shared mode
->>> with a_lock(SELock.SHARE):  # read a
->>>     print(f'under shared lock, a = {a}')
+>>> with SELockExcl(a_lock):  # write to a
+...     a = 1
+...     print(f'under exclusive lock, a = {a}')
 under exclusive lock, a = 1
+
+>>> # Get lock in shared mode
+>>> with SELockShare(a_lock):  # read a
+...     print(f'under shared lock, a = {a}')
 under shared lock, a = 1
 
 
@@ -127,7 +128,7 @@ class SELock:
         ################################################################
         # Set vars
         ################################################################
-        # the se_lock_lock is used to protect the owner_waiter_q 
+        # the se_lock_lock is used to protect the owner_waiter_q
         self.se_lock_lock = threading.Lock()
 
         # When a request is made for the lock, a LockOwnerWaiter object
@@ -170,10 +171,10 @@ class SELock:
 
         :Example: instantiate a SELock and call repr on the instance
 
-         >>> from scottbrian_locking.se_lock import SELock
+        >>> from scottbrian_locking.se_lock import SELock
         >>> a_lock = SELock()
         >>> repr(a_lock)
-        SELock()
+        'SELock()'
 
         """
         if TYPE_CHECKING:
@@ -203,13 +204,13 @@ class SELock:
         with self.se_lock_lock:
             if mode not in (SELock.EXCL, SELock.SHARE):
                 raise IncorrectModeSpecified(
-                    'For SELock obtain, the mode must be specified as ' 
+                    'For SELock obtain, the mode must be specified as '
                     'either SELock.SHARE or SELock.EXCL')
             wait_event = threading.Event()
             self.owner_wait_q.append(
                 SELock.LockOwnerWaiter(mode=mode,
-                                  event=wait_event,
-                                  thread=threading.current_thread())
+                                       event=wait_event,
+                                       thread=threading.current_thread())
             )
             if self.owner_wait_q[0].thread is threading.current_thread():
                 return
@@ -232,10 +233,13 @@ class SELock:
                       wait_event: threading.Event) -> None:
         """Method to wait for the SELock.
 
+        Args:
+            wait_event: event to wait on that will be set by the current
+                owner upon lock release
+
         Raises:
-            SELockOwnerNotAlive:
-              The owner of the SELock is not alive and will
-              thus never release the lock.
+            SELockOwnerNotAlive: The owner of the SELock is not alive
+                and will thus never release the lock.
 
         """
         while True:
@@ -268,17 +272,17 @@ class SELock:
 
         Raises:
             AttemptedReleaseOfUnownedLock: A release of the SELock was
-              attempted by thread {threading.current_thread()} but an
-              entry on the owner-waiter queue was not found for that
-              thread.
+                attempted by thread {threading.current_thread()} but an
+                entry on the owner-waiter queue was not found for that
+                thread.
             AttemptedReleaseByExclusiveWaiter: A release of the SELock
-              was attempted by thread {threading.current_thread()} but
-              the entry found was still waiting for exclusive control
-              of the lock.
+                was attempted by thread {threading.current_thread()} but
+                the entry found was still waiting for exclusive control
+                of the lock.
             AttemptedReleaseBySharedWaiter: A release of the SELock was
-              attempted by thread {threading.current_thread()} but the
-              entry found was still waiting for shared control of the
-              lock.
+                attempted by thread {threading.current_thread()} but the
+                entry found was still waiting for shared control of the
+                lock.
         """
         with self.se_lock_lock:
             excl_idx = -1  # init to indicate exclusive req not found

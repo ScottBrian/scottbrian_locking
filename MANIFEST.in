@@ -3,6 +3,8 @@ include mypy.ini
 include pytest.ini
 include tox.ini
 include *.py
+recursive-include src *.pyi
+recursive-include src *.typed
 include *.yml
 include docs/requirements.txt
 recursive-include docs *.bat
