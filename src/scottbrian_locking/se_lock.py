@@ -256,8 +256,8 @@ class SELock:
                 with self.se_lock_lock:
                     if not self.owner_wait_q[0].thread.is_alive():
                         raise SELockOwnerNotAlive(
-                            'The owner of the SELock is not alive and will '
-                            'thus never release the lock. '
+                            'The owner of the SELock is not alive and '
+                            'will thus never release the lock. '
                             f'Owner thread = {self.owner_wait_q[0]}')
 
     ####################################################################
@@ -281,8 +281,8 @@ class SELock:
               lock.
         """
         with self.se_lock_lock:
-            excl_idx = -1
-            item_idx = -1
+            excl_idx = -1  # init to indicate exclusive req not found
+            item_idx = -1  # init to indicate req not found
             item_mode = SELock.EXCL
             for idx, item in enumerate(self.owner_wait_q):
                 if (excl_idx == -1) and (item.mode == SELock.EXCL):
@@ -316,29 +316,36 @@ class SELock:
             # release the lock
             del self.owner_wait_q[item_idx]
 
-            # Grant ownership to next water if lock now available.
+            # Grant ownership to next waiter if lock now available.
             # If the released mode was exclusive, then we know we just
             # released the first item on the queue and that the new
-            # first is waiting and is now ready to wake up. If the new
-            # first item if for exclusive control, only the first item
-            # is resumed. If the first item is for shared control, it
-            # and any subsequent shared items will be resumed.
+            # first item was waiting and is now ready to wake up. If the
+            # new first item is for exclusive control then it will be
+            # the only item to be resumed. If the new first item is for
+            # shared control, it and any subsequent shared items up to
+            # the next exclusive item or end of queue will be resumed.
             # If the released item was holding the lock as shared,
             # there may be additional shared items that will need to be
             # released before we can resume any items. If the released
             # item is shared and is the last of the group, then the new
             # first item will be for exclusive control in which can we
-            # will grant control by resuming it.
+            # will grant control by resuming it (unless the last of the
+            # group was also the last on the queue).
             if self.owner_wait_q:
                 if self.owner_wait_q[0].mode == SELock.EXCL:
                     # wake up the exclusive waiter
                     self.owner_wait_q[0].event.set()
                     return  # all done
-                # If we are here, new first item is shared owner or
-                # waiter. If we released exclusive, then we need to
-                # resume one or more shared waiters. If we release
-                # shared item, then we have no resumes to do yet.
-                if item_mode == SELock.EXCL:
+                # If we are here, new first item is either a shared
+                # owner or a shared waiter. If we just released an
+                # exclusive item, then we know that the new first shared
+                # item was waiting and we now need to resume it and any
+                # subsequent shared items to grant shared control.
+                # If we had instead just released a shared item, then we
+                # know the new first shared item and any subsequent
+                # shared items were already previously resumed with
+                # shared control, meaning we have nothing to do.
+                if item_mode == SELock.EXCL:  # exclusive was released
                     for item in self.owner_wait_q:
                         # if we come to an exclusive waiter, then we are
                         # done for now
