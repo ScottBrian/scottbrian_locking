@@ -24,7 +24,6 @@ from scottbrian_locking.se_lock import SELock, SELockShare, SELockExcl
 from scottbrian_locking.se_lock import AttemptedReleaseByExclusiveWaiter
 from scottbrian_locking.se_lock import AttemptedReleaseBySharedWaiter
 from scottbrian_locking.se_lock import AttemptedReleaseOfUnownedLock
-from scottbrian_locking.se_lock import IncorrectModeSpecified
 from scottbrian_locking.se_lock import SELockOwnerNotAlive
 
 
@@ -160,15 +159,6 @@ def use_context_arg(request: Any) -> int:
 class TestSELockErrors:
     """TestSELock class."""
 
-    def test_se_lock_incorrect_mode(self) -> None:
-        """Test incorrect mode specification."""
-        ################################################################
-        # IncorrectModeSpecified
-        ################################################################
-        with pytest.raises(IncorrectModeSpecified):
-            a_lock = SELock()
-            a_lock.obtain(mode=0)
-
     def test_se_lock_release_unowned_lock(self) -> None:
         """Test release of unowned lock."""
         ################################################################
@@ -185,7 +175,8 @@ class TestSELockErrors:
         ################################################################
         def f1() -> None:
             """Function that obtains lock and end still holding it."""
-            a_lock.obtain(mode=SELock.EXCL)
+            # a_lock.obtain(mode=SELock.EXCL)
+            a_lock.obtain_excl()
 
         with pytest.raises(SELockOwnerNotAlive):
             a_lock = SELock()
@@ -194,7 +185,8 @@ class TestSELockErrors:
             f1_thread.join()
 
             # f1 obtained the lock and exited
-            a_lock.obtain(mode=SELock.EXCL)
+            # a_lock.obtain(mode=SELock.EXCL)
+            a_lock.obtain_excl()
 
         f1_thread.join()
 
@@ -205,13 +197,15 @@ class TestSELockErrors:
         ################################################################
         def f2() -> None:
             """Function that gets lock exclusive to cause contention."""
-            a_lock.obtain(mode=SELock.EXCL)
+            # a_lock.obtain(mode=SELock.EXCL)
+            a_lock.obtain_excl()
             a_event.set()
             a_event2.wait()
 
         def f3() -> None:
             """Function that tries to release lock while waiting."""
-            a_lock.obtain(mode=SELock.EXCL)
+            # a_lock.obtain(mode=SELock.EXCL)
+            a_lock.obtain_excl()
             with pytest.raises(AttemptedReleaseByExclusiveWaiter):
                 a_lock.release()
 
@@ -246,13 +240,15 @@ class TestSELockErrors:
         ################################################################
         def f4() -> None:
             """Function that gets lock exclusive to cause contention."""
-            a_lock.obtain(mode=SELock.EXCL)
+            # a_lock.obtain(mode=SELock.EXCL)
+            a_lock.obtain_excl()
             a_event.set()
             a_event2.wait()
 
         def f5() -> None:
             """Function that tries to release lock while waiting."""
-            a_lock.obtain(mode=SELock.SHARE)
+            # a_lock.obtain(mode=SELock.SHARE)
+            a_lock.obtain_share()
             with pytest.raises(AttemptedReleaseBySharedWaiter):
                 a_lock.release()
 
@@ -378,7 +374,10 @@ class TestSELock:
                         a_event.wait()
 
             else:
-                a_lock.obtain(mode=mode)
+                if mode == SELock.SHARE:
+                    a_lock.obtain_share()
+                else:
+                    a_lock.obtain_excl()
                 f1_verify()
                 # for f1_item in thread_event_list:
                 #     if f1_item.req_num == req_num:
@@ -550,14 +549,11 @@ class TestSELockDocstrings:
         flowers('Example of SELock for README:')
 
         from scottbrian_locking.se_lock import SELock, SELockShare, SELockExcl
-        a = 0
         a_lock = SELock()
-
-        # Get lock in shared mode
-        with SELockShare(a_lock):  # read a
-            print(a)
-
         # Get lock in exclusive mode
         with SELockExcl(a_lock):  # write to a
             a = 1
-            print(a)
+            print(f'under exclusive lock, a = {a}')
+        # Get lock in shared mode
+        with SELockShare(a_lock):  # read a
+            print(f'under shared lock, a = {a}')

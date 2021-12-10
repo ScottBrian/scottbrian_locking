@@ -48,13 +48,11 @@ from typing import (Any, Final, NamedTuple, Type, TYPE_CHECKING)
 ########################################################################
 # Third Party
 ########################################################################
+from scottbrian_utils.diag_msg import get_formatted_call_sequence as call_seq
 
 ########################################################################
 # Local
 ########################################################################
-
-
-logger = logging.getLogger(__name__)
 
 
 ########################################################################
@@ -77,11 +75,6 @@ class AttemptedReleaseBySharedWaiter(SELockError):
 
 class AttemptedReleaseOfUnownedLock(SELockError):
     """SELock exception for attempted release of unowned lock."""
-    pass
-
-
-class IncorrectModeSpecified(SELockError):
-    """SELock exception for an incorrect mode specification."""
     pass
 
 
@@ -140,6 +133,15 @@ class SELock:
         # requesters will periodically test the owner thread to ensure
         # the owner is still alive.
         self.owner_wait_q: list[SELock.LockOwnerWaiter] = []
+        self.owner_count = 0
+        self.excl_wait_count = 0
+
+        # add a logger for the SELock
+        self.logger = logging.getLogger(__name__)
+
+        # Set a flag to use to make it easier to determine whether debug
+        # logging is enabled
+        self.debug_logging_enabled = self.logger.isEnabledFor(logging.DEBUG)
 
     ####################################################################
     # len
@@ -184,44 +186,135 @@ class SELock:
 
         return f'{classname}({parms})'
 
+    # ####################################################################
+    # # obtain
+    # ####################################################################
+    # def obtain(self, mode: int) -> None:
+    #     """Method to obtain the SELock.
+    #
+    #     Args:
+    #         mode: specifies whether to obtain the lock in shared mode
+    #                 (mode=SELock.SHARE) or exclusive mode
+    #                 (mode=SELock.EXCL)
+    #
+    #     Raises:
+    #         IncorrectModeSpecified: For SELock obtain, the mode
+    #                                 must be specified as either
+    #                                 SELock.SHARE or SELock.EXCL.
+    #
+    #     """
+    #     if mode not in (SELock.EXCL, SELock.SHARE):
+    #         raise IncorrectModeSpecified(
+    #             'For SELock obtain, the mode must be specified as '
+    #             'either SELock.SHARE or SELock.EXCL')
+    #     if mode == SELock.EXCL:
+    #         self.obtain_excl()
+    #     else:
+    #         self.obtain_share()
+
+        # with self.se_lock_lock:
+        #
+        #     wait_event = threading.Event()
+        #     self.owner_wait_q.append(
+        #         SELock.LockOwnerWaiter(mode=mode,
+        #                                event=wait_event,
+        #                                thread=threading.current_thread())
+        #     )
+        #     if self.owner_wait_q[0].thread is threading.current_thread():
+        #         if mode == SELock.EXCL:
+        #             mode_text = 'exclusive'
+        #         else:
+        #             mode_text = 'shared'
+        #         if self.debug_logging_enabled:
+        #             self.logger.debug(
+        #                 f'SELock granted immediate {mode_text} control to '
+        #                 f'{threading.current_thread().name}, '
+        #                 f'caller {call_seq(latest=1, depth=2)}'
+        #             )
+        #         return
+        #     if mode == SELock.SHARE:
+        #         exclusive_waiter_found = False
+        #         for item in self.owner_wait_q:
+        #             if item.mode == SELock.EXCL:
+        #                 exclusive_waiter_found = True
+        #                 break
+        #         if not exclusive_waiter_found:
+        #             if self.debug_logging_enabled:
+        #                 self.logger.debug(
+        #                     'SELock granted immediate shared control to '
+        #                     f'{threading.current_thread().name}, '
+        #                     f'caller {call_seq(latest=1, depth=2)}'
+        #                 )
+        #             return
+        #
+        # self.wait_for_lock(wait_event=wait_event)
+
     ####################################################################
-    # obtain
+    # obtain_excl
     ####################################################################
-    def obtain(self, mode: int) -> None:
-        """Method to obtain the SELock.
-
-        Args:
-            mode: specifies whether to obtain the lock in shared mode
-                    (mode=SELock.SHARE) or exclusive mode
-                    (mode=SELock.EXCL)
-
-        Raises:
-            IncorrectModeSpecified: For SELock obtain, the mode
-                                    must be specified as either
-                                    SELock.SHARE or SELock.EXCL.
-
-        """
+    def obtain_excl(self) -> None:
+        """Method to obtain the SELock."""
         with self.se_lock_lock:
-            if mode not in (SELock.EXCL, SELock.SHARE):
-                raise IncorrectModeSpecified(
-                    'For SELock obtain, the mode must be specified as '
-                    'either SELock.SHARE or SELock.EXCL')
+
             wait_event = threading.Event()
             self.owner_wait_q.append(
-                SELock.LockOwnerWaiter(mode=mode,
+                SELock.LockOwnerWaiter(mode=SELock.EXCL,
                                        event=wait_event,
                                        thread=threading.current_thread())
             )
-            if self.owner_wait_q[0].thread is threading.current_thread():
+            # if self.owner_wait_q[0].thread is threading.current_thread():
+            if self.owner_count == 0:
+                self.owner_count = -1
+
+                if self.debug_logging_enabled:
+                    self.logger.debug(
+                        f'SELock granted immediate exclusive control to '
+                        f'{threading.current_thread().name}, '
+                        f'caller {call_seq(latest=1, depth=2)}'
+                    )
                 return
-            if mode == SELock.SHARE:
-                exclusive_waiter_found = False
-                for item in self.owner_wait_q:
-                    if item.mode == SELock.EXCL:
-                        exclusive_waiter_found = True
-                        break
-                if not exclusive_waiter_found:
-                    return
+
+            self.excl_wait_count += 1
+
+        self.wait_for_lock(wait_event=wait_event)
+
+    ####################################################################
+    # obtain_share
+    ####################################################################
+    def obtain_share(self) -> None:
+        """Method to obtain the SELock."""
+        with self.se_lock_lock:
+
+            wait_event = threading.Event()
+            self.owner_wait_q.append(
+                SELock.LockOwnerWaiter(mode=SELock.SHARE,
+                                       event=wait_event,
+                                       thread=threading.current_thread())
+            )
+            # if self.owner_wait_q[0].thread is threading.current_thread():
+            if self.excl_wait_count == 0 <= self.owner_count:
+                self.owner_count += 1
+                if self.debug_logging_enabled:
+                    self.logger.debug(
+                        f'SELock granted immediate shared control to '
+                        f'{threading.current_thread().name}, '
+                        f'caller {call_seq(latest=1, depth=2)}'
+                    )
+                return
+            # exclusive_waiter_found = False
+            # for item in self.owner_wait_q:
+            #     if item.mode == SELock.EXCL:
+            #         exclusive_waiter_found = True
+            #         break
+            # if not exclusive_waiter_found:
+            #     self.owner_count += 1
+            #     if self.debug_logging_enabled:
+            #         self.logger.debug(
+            #             'SELock granted immediate shared control to '
+            #             f'{threading.current_thread().name}, '
+            #             f'caller {call_seq(latest=1, depth=2)}'
+            #         )
+            #     return
 
         self.wait_for_lock(wait_event=wait_event)
 
@@ -319,7 +412,10 @@ class SELock:
 
             # release the lock
             del self.owner_wait_q[item_idx]
-
+            if item_mode == SELock.EXCL:
+                self.owner_count = 0
+            else:
+                self.owner_count -= 1
             # Grant ownership to next waiter if lock now available.
             # If the released mode was exclusive, then we know we just
             # released the first item on the queue and that the new
@@ -339,6 +435,8 @@ class SELock:
                 if self.owner_wait_q[0].mode == SELock.EXCL:
                     # wake up the exclusive waiter
                     self.owner_wait_q[0].event.set()
+                    self.owner_count = -1
+                    self.excl_wait_count -= 1
                     return  # all done
                 # If we are here, new first item is either a shared
                 # owner or a shared waiter. If we just released an
@@ -357,6 +455,7 @@ class SELock:
                             return
                         # wake up shared waiter
                         item.event.set()
+                        self.owner_count += 1
 
 
 ########################################################################
@@ -375,7 +474,8 @@ class SELockShare:
 
     def __enter__(self) -> None:
         """Context manager enter method."""
-        self.se_lock.obtain(SELock.SHARE)
+        # self.se_lock.obtain(SELock.SHARE)
+        self.se_lock.obtain_share()
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Context manager exit method.
@@ -406,7 +506,8 @@ class SELockExcl:
 
     def __enter__(self) -> None:
         """Context manager enter method."""
-        self.se_lock.obtain(SELock.EXCL)
+        # self.se_lock.obtain(SELock.EXCL)
+        self.se_lock.obtain_excl()
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Context manager exit method.
