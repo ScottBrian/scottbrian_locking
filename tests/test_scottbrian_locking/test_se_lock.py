@@ -24,6 +24,7 @@ from scottbrian_locking.se_lock import SELock, SELockShare, SELockExcl
 from scottbrian_locking.se_lock import AttemptedReleaseByExclusiveWaiter
 from scottbrian_locking.se_lock import AttemptedReleaseBySharedWaiter
 from scottbrian_locking.se_lock import AttemptedReleaseOfUnownedLock
+from scottbrian_locking.se_lock import LockObtainTimeout
 from scottbrian_locking.se_lock import SELockOwnerNotAlive
 
 
@@ -151,6 +152,25 @@ def use_context_arg(request: Any) -> int:
         The params values are returned one at a time
     """
     return cast(int, request.param)
+
+
+########################################################################
+# use_timeout_arg fixture
+########################################################################
+use_timeout_arg_list = [True, False]
+
+
+@pytest.fixture(params=use_timeout_arg_list)  # type: ignore
+def use_timeout_arg(request: Any) -> bool:
+    """Using timeout.
+
+    Args:
+        request: special fixture that returns the fixture params
+
+    Returns:
+        The params values are returned one at a time
+    """
+    return cast(bool, request.param)
 
 
 ########################################################################
@@ -299,21 +319,111 @@ class TestSELockBasic:
 # TestSELock class
 ###############################################################################
 class TestSELock:
-    """Class TestSELock.
+    """Class TestSELock."""
 
-    The following section tests various scenarios of shared and
-    exclusive locking.
+    ###########################################################################
+    # test_se_lock_timeout
+    ###########################################################################
+    def test_se_lock_timeout(self,
+                            use_timeout_arg: int,
+                            use_context_arg: int) -> None:
+        """Method to test se_lock without using context manager."""
+        def f1(use_timeout_tf: bool,
+               use_context_tf: bool) -> None:
+            """Function to get the lock and wait.
 
-    We will try combinations of shared and exclusive obtains and verify
-    that the order in requests is maintained.
+            Args:
+                use_timeout_tf: indicates whether to specify timeout
+                                  on the lock requests
+                use_context_tf: indicate whether to use context manager
+                    lock obtain or to make the call directly
 
-    Scenario:
-       1) obtain 0 to 3 shared - verify
-       2) obtain 0 to 3 exclusive - verify
-       3) obtain 0 to 3 shared - verify
-       4) obtain 0 to 3 exclusive - verify
+            """
+            logger.debug('f1 entered')
+            if use_timeout_tf:
+                logger.debug('f1 about to obtain excl with timeout')
+                a_lock.obtain_excl(timeout=0.2)
+                logger.debug('f1 obtained excl with timeout')
+            else:
+                logger.debug('f1 about to obtain excl without timeout')
+                a_lock.obtain_excl()
+                logger.debug('f1 obtained excl without timeout')
 
-    """
+            a_event1.set()
+            a_event2.wait()
+            a_event2.clear()
+
+            a_lock.release()
+
+            if use_timeout_tf:
+                logger.debug('f1 about to obtain share with timeout')
+                a_lock.obtain_share(timeout=0.2)
+                logger.debug('f1 obtained share with timeout')
+            else:
+                logger.debug('f1 about to obtain share without timeout')
+                a_lock.obtain_share()
+                logger.debug('f1 obtained share without timeout')
+
+            a_event1.set()
+            a_event2.wait()
+
+            logger.debug('f1 exiting')
+
+        logger.debug('mainline entered')
+        a_lock = SELock()
+
+        a_event1 = threading.Event()
+        a_event2 = threading.Event()
+
+        f1_thread = threading.Thread(target=f1,
+                                     args=(use_timeout_arg,
+                                           use_context_arg))
+        f1_thread.start()
+
+        logger.debug('mainline about to wait 1')
+        a_event1.wait()
+        a_event1.clear()
+
+        logger.debug('mainline about to request excl 1')
+        with pytest.raises(LockObtainTimeout):
+            a_lock.obtain_excl(timeout=0.2)
+
+        logger.debug('mainline about to request share 1')
+        with pytest.raises(LockObtainTimeout):
+            a_lock.obtain_share(timeout=0.2)
+
+        logger.debug('mainline about to request excl 2')
+        with pytest.raises(LockObtainTimeout):
+            a_lock.obtain_excl(timeout=0.2)
+
+        logger.debug('mainline about to request share 2')
+        with pytest.raises(LockObtainTimeout):
+            a_lock.obtain_share(timeout=0.2)
+
+        a_event2.set()
+
+        logger.debug('mainline about to wait 2')
+        a_event1.wait()
+
+        logger.debug('mainline about to request excl 3')
+        with pytest.raises(LockObtainTimeout):
+            a_lock.obtain_excl(timeout=0.2)
+
+        logger.debug('mainline about to request share 3')
+        a_lock.obtain_share(timeout=0.2)
+        a_lock.release()
+
+        logger.debug('mainline about to request excl 4')
+        with pytest.raises(LockObtainTimeout):
+            a_lock.obtain_excl(timeout=0.2)
+
+        logger.debug('mainline about to request share 4')
+        a_lock.obtain_share(timeout=0.2)
+        a_lock.release()
+
+        a_event2.set()
+        f1_thread.join()
+        logger.debug('mainline exiting')
 
     ###########################################################################
     # test_se_lock_combos
@@ -327,6 +437,18 @@ class TestSELock:
                             use_context_arg: int) -> None:
         """Method to test se_lock without using context manager.
 
+        The following section tests various scenarios of shared and
+        exclusive locking.
+
+        We will try combinations of shared and exclusive obtains and
+        verify that the order in requests is maintained.
+
+        Scenario:
+           1) obtain 0 to 3 shared - verify
+           2) obtain 0 to 3 exclusive - verify
+           3) obtain 0 to 3 shared - verify
+           4) obtain 0 to 3 exclusive - verify
+
         Args:
             num_share_requests1_arg: number of first share requests
             num_excl_requests1_arg: number of first excl requests
@@ -336,6 +458,7 @@ class TestSELock:
                                     owners that will release the lock
             use_context_arg: indicate whether to use context manager
                                to request the lock
+
         """
         num_groups = 4
 
