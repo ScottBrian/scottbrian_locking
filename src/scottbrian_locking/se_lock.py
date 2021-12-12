@@ -41,9 +41,10 @@ The se_lock module contains:
 ########################################################################
 # Standard Library
 ########################################################################
+from enum import Enum, auto
 import logging
 import threading
-from typing import (Any, Final, NamedTuple, Type, TYPE_CHECKING)
+from typing import (Any, NamedTuple, Type, TYPE_CHECKING)
 
 ########################################################################
 # Third Party
@@ -91,18 +92,18 @@ class SELock:
 
     The SELock class is used to coordinate read/write access to shared
     resources in a multi-threaded application.
+
     """
+    class Mode(Enum):
+        """Enum class for lock mode."""
+        SHARE = auto()
+        EXCL = auto()
 
     class LockOwnerWaiter(NamedTuple):
         """NamedTuple for the lock request queue item."""
-        mode: int
+        mode: "SELock.Mode"
         event: threading.Event
         thread: threading.Thread
-
-    SHARE: Final[int] = 1
-    EXCL: Final[int] = 2
-
-    RC_OK: Final[int] = 0
 
     ####################################################################
     # init
@@ -127,35 +128,58 @@ class SELock:
         # When a request is made for the lock, a LockOwnerWaiter object
         # is placed on the owner_waiter_q and remains there until a
         # lock release is done. The LockOwnerWaiter contains the
-        # requester thread and an event. If the requester needs to wait
-        # for the lock, the event will be set to wake the requester as
-        # soon as the lock is assigned to the requester. Other waiting
-        # requesters will periodically test the owner thread to ensure
-        # the owner is still alive.
+        # requester thread and an event. If the lock is immediately
+        # available, the requester is given back control and the event
+        # will never need to be posted. If, instead, the lock is not
+        # yet available, we will wait on the event until the owner of
+        # the lock does a release, at which time the waiting event will
+        # be posted and the requester will then be given back control as
+        # the new owner.
         self.owner_wait_q: list[SELock.LockOwnerWaiter] = []
+
+        # The owner count is used to indicate whether the lock is is
+        # currently owned, and the mode. A value of zero indicates that
+        # the lock is currently not owned. A value of -1 indicates that
+        # the lock is owned in exclusive mode. A value greater than zero
+        # indicates the lock is owned in shared mode with the value
+        # being the number of requesters that own the lock.
         self.owner_count = 0
+
+        # The exclusive wait count is used to indicate the number of
+        # exclusive requesters that are currently waiting for the lock.
+        # This used to quickly determine whether a new shared requester
+        # needs to wait (excl_wait_count is greater than zero) or can be
+        # granted shared ownership along with other shared owners
+        # (excl_wait_count is zero).
         self.excl_wait_count = 0
 
         # add a logger for the SELock
         self.logger = logging.getLogger(__name__)
 
-        # Set a flag to use to make it easier to determine whether debug
-        # logging is enabled
+        # Flag to quickly determine whether debug logging is enabled
         self.debug_logging_enabled = self.logger.isEnabledFor(logging.DEBUG)
 
     ####################################################################
     # len
     ####################################################################
     def __len__(self) -> int:
-        """Return the number of items in the owner_wait_q.
+        """Return the number of items on the owner_wait_q.
 
         Returns:
-            The number of entries in the owner_wait_q as an integer
+            The number of entries on the owner_wait_q as an integer
 
         :Example: instantiate a se_lock and get the len
 
         >>> from scottbrian_locking.se_lock import SELock
         >>> a_lock = SELock()
+        >>> print(len(a_lock))
+        0
+
+        >>> a_lock.obtain_excl()
+        >>> print(len(a_lock))
+        1
+
+        >>> a_lock.release()
         >>> print(len(a_lock))
         0
 
@@ -186,85 +210,31 @@ class SELock:
 
         return f'{classname}({parms})'
 
-    # ####################################################################
-    # # obtain
-    # ####################################################################
-    # def obtain(self, mode: int) -> None:
-    #     """Method to obtain the SELock.
-    #
-    #     Args:
-    #         mode: specifies whether to obtain the lock in shared mode
-    #                 (mode=SELock.SHARE) or exclusive mode
-    #                 (mode=SELock.EXCL)
-    #
-    #     Raises:
-    #         IncorrectModeSpecified: For SELock obtain, the mode
-    #                                 must be specified as either
-    #                                 SELock.SHARE or SELock.EXCL.
-    #
-    #     """
-    #     if mode not in (SELock.EXCL, SELock.SHARE):
-    #         raise IncorrectModeSpecified(
-    #             'For SELock obtain, the mode must be specified as '
-    #             'either SELock.SHARE or SELock.EXCL')
-    #     if mode == SELock.EXCL:
-    #         self.obtain_excl()
-    #     else:
-    #         self.obtain_share()
-
-        # with self.se_lock_lock:
-        #
-        #     wait_event = threading.Event()
-        #     self.owner_wait_q.append(
-        #         SELock.LockOwnerWaiter(mode=mode,
-        #                                event=wait_event,
-        #                                thread=threading.current_thread())
-        #     )
-        #     if self.owner_wait_q[0].thread is threading.current_thread():
-        #         if mode == SELock.EXCL:
-        #             mode_text = 'exclusive'
-        #         else:
-        #             mode_text = 'shared'
-        #         if self.debug_logging_enabled:
-        #             self.logger.debug(
-        #                 f'SELock granted immediate {mode_text} control to '
-        #                 f'{threading.current_thread().name}, '
-        #                 f'caller {call_seq(latest=1, depth=2)}'
-        #             )
-        #         return
-        #     if mode == SELock.SHARE:
-        #         exclusive_waiter_found = False
-        #         for item in self.owner_wait_q:
-        #             if item.mode == SELock.EXCL:
-        #                 exclusive_waiter_found = True
-        #                 break
-        #         if not exclusive_waiter_found:
-        #             if self.debug_logging_enabled:
-        #                 self.logger.debug(
-        #                     'SELock granted immediate shared control to '
-        #                     f'{threading.current_thread().name}, '
-        #                     f'caller {call_seq(latest=1, depth=2)}'
-        #                 )
-        #             return
-        #
-        # self.wait_for_lock(wait_event=wait_event)
-
     ####################################################################
     # obtain_excl
     ####################################################################
     def obtain_excl(self) -> None:
-        """Method to obtain the SELock."""
-        with self.se_lock_lock:
+        """Method to obtain the SELock.
 
+        :Example: obtain an SELock in exclusive mode
+
+        >>> from scottbrian_locking.se_lock import SELock
+        >>> a_lock = SELock()
+        >>> a_lock.obtain_excl()
+        >>> print('lock obtained in exclusive mode')
+        lock obtained in exclusive mode
+
+        """
+        with self.se_lock_lock:
+            # get a wait event to wait on lock if unavailable
             wait_event = threading.Event()
             self.owner_wait_q.append(
-                SELock.LockOwnerWaiter(mode=SELock.EXCL,
+                SELock.LockOwnerWaiter(mode=SELock.Mode.EXCL,
                                        event=wait_event,
                                        thread=threading.current_thread())
             )
-            # if self.owner_wait_q[0].thread is threading.current_thread():
-            if self.owner_count == 0:
-                self.owner_count = -1
+            if self.owner_count == 0:  # if lock is free
+                self.owner_count = -1  # indicate now owned exclusive
 
                 if self.debug_logging_enabled:
                     self.logger.debug(
@@ -274,26 +244,38 @@ class SELock:
                     )
                 return
 
+            # lock not free, bump wait count while se_lock_lock held
             self.excl_wait_count += 1
 
+        # we are in the queue, wait for lock to be granted to us
         self.wait_for_lock(wait_event=wait_event)
 
     ####################################################################
     # obtain_share
     ####################################################################
     def obtain_share(self) -> None:
-        """Method to obtain the SELock."""
-        with self.se_lock_lock:
+        """Method to obtain the SELock.
 
+        :Example: obtain an SELock in exclusive mode
+
+        >>> from scottbrian_locking.se_lock import SELock
+        >>> a_lock = SELock()
+        >>> a_lock.obtain_share()
+        >>> print('lock obtained in shared mode')
+        lock obtained in shared mode
+
+        """
+        with self.se_lock_lock:
+            # get a wait event to wait on lock if unavailable
             wait_event = threading.Event()
             self.owner_wait_q.append(
-                SELock.LockOwnerWaiter(mode=SELock.SHARE,
+                SELock.LockOwnerWaiter(mode=SELock.Mode.SHARE,
                                        event=wait_event,
                                        thread=threading.current_thread())
             )
-            # if self.owner_wait_q[0].thread is threading.current_thread():
+            # if no exclusive waiters, and lock is free or owned shared
             if self.excl_wait_count == 0 <= self.owner_count:
-                self.owner_count += 1
+                self.owner_count += 1  # bump the share owner count
                 if self.debug_logging_enabled:
                     self.logger.debug(
                         f'SELock granted immediate shared control to '
@@ -301,21 +283,8 @@ class SELock:
                         f'caller {call_seq(latest=1, depth=2)}'
                     )
                 return
-            # exclusive_waiter_found = False
-            # for item in self.owner_wait_q:
-            #     if item.mode == SELock.EXCL:
-            #         exclusive_waiter_found = True
-            #         break
-            # if not exclusive_waiter_found:
-            #     self.owner_count += 1
-            #     if self.debug_logging_enabled:
-            #         self.logger.debug(
-            #             'SELock granted immediate shared control to '
-            #             f'{threading.current_thread().name}, '
-            #             f'caller {call_seq(latest=1, depth=2)}'
-            #         )
-            #     return
 
+        # we are in the queue, wait for lock to be granted to us
         self.wait_for_lock(wait_event=wait_event)
 
     ####################################################################
@@ -336,26 +305,17 @@ class SELock:
 
         """
         while True:
+            # wait for lock to be granted to us
             if wait_event.wait(timeout=10):
                 return
 
-            # we check first without holding the se_lock_lock
-            if not self.owner_wait_q[0].thread.is_alive():
-                # We need to confirm while holding the se_lock_lock
-                # to cover the case where we get the current lock owner
-                # thread and call the is_alive method and just as we
-                # call the lock is released by the owner who then exits
-                # and is no longer alive. Meanwhile, the lock has a new
-                # owner (possibly us) who is alive. Getting the
-                # se_lock_lock here ensures the current lock owner is
-                # not allowed to do a release while we are checking
-                # whether it is alive.
-                with self.se_lock_lock:
-                    if not self.owner_wait_q[0].thread.is_alive():
-                        raise SELockOwnerNotAlive(
-                            'The owner of the SELock is not alive and '
-                            'will thus never release the lock. '
-                            f'Owner thread = {self.owner_wait_q[0]}')
+            # we have waited long enough, check if owner still alive
+            with self.se_lock_lock:
+                if not self.owner_wait_q[0].thread.is_alive():
+                    raise SELockOwnerNotAlive(
+                        'The owner of the SELock is not alive and '
+                        'will thus never release the lock. '
+                        f'Owner thread = {self.owner_wait_q[0]}')
 
     ####################################################################
     # release
@@ -376,13 +336,26 @@ class SELock:
                 attempted by thread {threading.current_thread()} but the
                 entry found was still waiting for shared control of the
                 lock.
+
+        :Example: obtain an SELock in shared mode and release it
+
+        >>> from scottbrian_locking.se_lock import SELock
+        >>> a_lock = SELock()
+        >>> a_lock.obtain_share()
+        >>> print('lock obtained in shared mode')
+        lock obtained in shared mode
+
+        >>> a_lock.release()
+        >>> print('lock released')
+        lock released
+
         """
         with self.se_lock_lock:
             excl_idx = -1  # init to indicate exclusive req not found
             item_idx = -1  # init to indicate req not found
-            item_mode = SELock.EXCL
+            item_mode = SELock.Mode.EXCL
             for idx, item in enumerate(self.owner_wait_q):
-                if (excl_idx == -1) and (item.mode == SELock.EXCL):
+                if (excl_idx == -1) and (item.mode == SELock.Mode.EXCL):
                     excl_idx = idx
                 if item.thread is threading.current_thread():
                     item_idx = idx
@@ -395,7 +368,7 @@ class SELock:
                     f'{threading.current_thread()} but an entry on the '
                     'owner-waiter queue was not found for that thread.')
 
-            if item_idx != 0 and item_mode == SELock.EXCL:
+            if item_idx != 0 and item_mode == SELock.Mode.EXCL:
                 raise AttemptedReleaseByExclusiveWaiter(
                     'A release of the SELock was attempted by thread '
                     f'{threading.current_thread()} but the entry '
@@ -403,7 +376,7 @@ class SELock:
                     'the lock.')
 
             if (0 <= excl_idx < item_idx
-                    and item_mode == SELock.SHARE):
+                    and item_mode == SELock.Mode.SHARE):
                 raise AttemptedReleaseBySharedWaiter(
                     'A release of the SELock was attempted by thread '
                     f'{threading.current_thread()} but the entry '
@@ -412,7 +385,7 @@ class SELock:
 
             # release the lock
             del self.owner_wait_q[item_idx]
-            if item_mode == SELock.EXCL:
+            if item_mode == SELock.Mode.EXCL:
                 self.owner_count = 0
             else:
                 self.owner_count -= 1
@@ -432,7 +405,7 @@ class SELock:
             # will grant control by resuming it (unless the last of the
             # group was also the last on the queue).
             if self.owner_wait_q:
-                if self.owner_wait_q[0].mode == SELock.EXCL:
+                if self.owner_wait_q[0].mode == SELock.Mode.EXCL:
                     # wake up the exclusive waiter
                     self.owner_wait_q[0].event.set()
                     self.owner_count = -1
@@ -445,13 +418,13 @@ class SELock:
                 # subsequent shared items to grant shared control.
                 # If we had instead just released a shared item, then we
                 # know the new first shared item and any subsequent
-                # shared items were already previously resumed with
-                # shared control, meaning we have nothing to do.
-                if item_mode == SELock.EXCL:  # exclusive was released
+                # shared items were already previously granted shared
+                # control, meaning we have nothing to do.
+                if item_mode == SELock.Mode.EXCL:  # exclusive was released
                     for item in self.owner_wait_q:
                         # if we come to an exclusive waiter, then we are
                         # done for now
-                        if item.mode == SELock.EXCL:
+                        if item.mode == SELock.Mode.EXCL:
                             return
                         # wake up shared waiter
                         item.event.set()
@@ -469,12 +442,20 @@ class SELockShare:
         Args:
             se_lock: instance of SELock
 
+        :Example: obtain an SELock in shared mode
+
+        >>> from scottbrian_locking.se_lock import SELock
+        >>> a_lock = SELock()
+        >>> # Get lock in shared mode
+        >>> with SELockShare(a_lock):
+        ...     print(f'under shared lock')
+        under shared lock
+
         """
         self.se_lock = se_lock
 
     def __enter__(self) -> None:
         """Context manager enter method."""
-        # self.se_lock.obtain(SELock.SHARE)
         self.se_lock.obtain_share()
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
@@ -501,12 +482,20 @@ class SELockExcl:
         Args:
             se_lock: instance of SELock
 
+        :Example: obtain an SELock in exclusive mode
+
+        >>> from scottbrian_locking.se_lock import SELock
+        >>> a_lock = SELock()
+        >>> # Get lock in exclusive mode
+        >>> with SELockExcl(a_lock):
+        ...     print(f'under exclusive lock')
+        under exclusive lock
+
         """
         self.se_lock = se_lock
 
     def __enter__(self) -> None:
         """Context manager enter method."""
-        # self.se_lock.obtain(SELock.EXCL)
         self.se_lock.obtain_excl()
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:

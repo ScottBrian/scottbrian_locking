@@ -175,7 +175,7 @@ class TestSELockErrors:
         ################################################################
         def f1() -> None:
             """Function that obtains lock and end still holding it."""
-            # a_lock.obtain(mode=SELock.EXCL)
+            # a_lock.obtain(mode=SELock.Mode.EXCL)
             a_lock.obtain_excl()
 
         with pytest.raises(SELockOwnerNotAlive):
@@ -185,7 +185,7 @@ class TestSELockErrors:
             f1_thread.join()
 
             # f1 obtained the lock and exited
-            # a_lock.obtain(mode=SELock.EXCL)
+            # a_lock.obtain(mode=SELock.Mode.EXCL)
             a_lock.obtain_excl()
 
         f1_thread.join()
@@ -197,14 +197,14 @@ class TestSELockErrors:
         ################################################################
         def f2() -> None:
             """Function that gets lock exclusive to cause contention."""
-            # a_lock.obtain(mode=SELock.EXCL)
+            # a_lock.obtain(mode=SELock.Mode.EXCL)
             a_lock.obtain_excl()
             a_event.set()
             a_event2.wait()
 
         def f3() -> None:
             """Function that tries to release lock while waiting."""
-            # a_lock.obtain(mode=SELock.EXCL)
+            # a_lock.obtain(mode=SELock.Mode.EXCL)
             a_lock.obtain_excl()
             with pytest.raises(AttemptedReleaseByExclusiveWaiter):
                 a_lock.release()
@@ -240,14 +240,14 @@ class TestSELockErrors:
         ################################################################
         def f4() -> None:
             """Function that gets lock exclusive to cause contention."""
-            # a_lock.obtain(mode=SELock.EXCL)
+            # a_lock.obtain(mode=SELock.Mode.EXCL)
             a_lock.obtain_excl()
             a_event.set()
             a_event2.wait()
 
         def f5() -> None:
             """Function that tries to release lock while waiting."""
-            # a_lock.obtain(mode=SELock.SHARE)
+            # a_lock.obtain(mode=SELock.Mode.SHARE)
             a_lock.obtain_share()
             with pytest.raises(AttemptedReleaseBySharedWaiter):
                 a_lock.release()
@@ -316,7 +316,7 @@ class TestSELock:
     """
 
     ###########################################################################
-    # test_se_lock_async
+    # test_se_lock_combos
     ###########################################################################
     def test_se_lock_combos(self,
                             num_share_requests1_arg: int,
@@ -340,7 +340,7 @@ class TestSELock:
         num_groups = 4
 
         def f1(a_event: threading.Event,
-               mode: int,
+               mode: SELock.Mode,
                req_num: int,
                use_context_tf: bool) -> None:
             """Function to get the lock and wait.
@@ -364,7 +364,7 @@ class TestSELock:
                         break
 
             if use_context_tf:
-                if mode == SELock.SHARE:
+                if mode == SELock.Mode.SHARE:
                     with SELockShare(a_lock):
                         f1_verify()
                         a_event.wait()
@@ -374,7 +374,7 @@ class TestSELock:
                         a_event.wait()
 
             else:
-                if mode == SELock.SHARE:
+                if mode == SELock.Mode.SHARE:
                     a_lock.obtain_share()
                 else:
                     a_lock.obtain_excl()
@@ -394,7 +394,7 @@ class TestSELock:
         class ThreadEvent:
             thread: threading.Thread
             event: threading.Event
-            mode: int
+            mode: SELock.Mode
             req_num: int
             lock_obtained: bool
 
@@ -409,21 +409,21 @@ class TestSELock:
                              num_excl_requests2_arg]
 
         num_initial_owners = 0
-        initial_owner_mode: Optional[int] = None
+        initial_owner_mode: Optional[SELock.Mode] = None
         if num_share_requests1_arg:
             num_initial_owners = num_share_requests1_arg
-            initial_owner_mode = SELock.SHARE
+            initial_owner_mode = SELock.Mode.SHARE
             if num_excl_requests1_arg == 0:
                 num_initial_owners += num_share_requests2_arg
         elif num_excl_requests1_arg:
             num_initial_owners = 1
-            initial_owner_mode = SELock.EXCL
+            initial_owner_mode = SELock.Mode.EXCL
         elif num_share_requests2_arg:
             num_initial_owners = num_share_requests2_arg
-            initial_owner_mode = SELock.SHARE
+            initial_owner_mode = SELock.Mode.SHARE
         elif num_excl_requests2_arg:
             num_initial_owners = 1
-            initial_owner_mode = SELock.EXCL
+            initial_owner_mode = SELock.Mode.EXCL
 
         for shr_excl in range(num_groups):
             num_requests = num_requests_list[shr_excl]
@@ -431,9 +431,9 @@ class TestSELock:
                 request_number += 1
                 a_event1 = threading.Event()
                 if shr_excl == 0 or shr_excl == 2:
-                    req_mode = SELock.SHARE
+                    req_mode = SELock.Mode.SHARE
                 else:
-                    req_mode = SELock.EXCL
+                    req_mode = SELock.Mode.EXCL
 
                 if use_context_arg == 0:
                     use_context = False
