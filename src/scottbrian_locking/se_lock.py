@@ -63,7 +63,8 @@ from dataclasses import dataclass
 from enum import Enum, auto
 import logging
 import threading
-from typing import (Any, NamedTuple, Optional, Type, TYPE_CHECKING, Union)
+from typing import (Any, Final, NamedTuple, Optional, Type,
+                    TYPE_CHECKING, Union)
 
 ########################################################################
 # Third Party
@@ -74,6 +75,11 @@ from scottbrian_utils.timer import Timer
 ########################################################################
 # Local
 ########################################################################
+
+########################################################################
+# type aliases
+########################################################################
+OptIntFloat = Optional[Union[int, float]]
 
 
 ########################################################################
@@ -135,6 +141,8 @@ class SELock:
         excl_idx: int
         item_idx: int
         item_mode: "SELock.Mode"
+
+    WAIT_TIMEOUT: Final[float] = 5.0
 
     ####################################################################
     # init
@@ -245,7 +253,7 @@ class SELock:
     # obtain_excl
     ####################################################################
     def obtain_excl(self,
-                    timeout: Optional[Union[int, float]] = None) -> None:
+                    timeout: OptIntFloat = None) -> None:
         """Method to obtain the SELock.
 
         :Example: obtain an SELock in exclusive mode
@@ -286,7 +294,7 @@ class SELock:
     # obtain_share
     ####################################################################
     def obtain_share(self,
-                     timeout: Optional[Union[int, float]] = None) -> None:
+                     timeout: OptIntFloat = None) -> None:
         """Method to obtain the SELock.
 
         :Example: obtain an SELock in exclusive mode
@@ -326,7 +334,7 @@ class SELock:
 
     def wait_for_lock(self,
                       wait_event: threading.Event,
-                      timeout: Optional[Union[int, float]]) -> None:
+                      timeout: OptIntFloat) -> None:
         """Method to wait for the SELock.
 
         Args:
@@ -340,6 +348,26 @@ class SELock:
                 and will thus never release the lock.
 
         """
+        # There are 2 timeout values used in this method. The timeout
+        # arg passed in is the number of seconds that the caller of
+        # obtain is giving us to get the lock. This value can be as
+        # small or as large as the caller wants, and could even be
+        # a value of None which means no time limit is to be used.
+        # The second timeout value if the one used on the wait_event
+        # when we wait for the lock. We want to wake up periodically to
+        # check whether the lock owner is still alive and raise an error
+        # if not. This timeout value is defined in WAIT_TIMEOUT and is
+        # a fairly large value intended to only wake us up to check for
+        # the rare case of the lock owner having failed and becoming not
+        # alive. If the caller specified timeout value is smaller than
+        # the WAIT_TIMEOUT value, we will use that on the wait_event
+        # to ensure we are honoring the caller desired timeout value.
+        # Note also that the timer.timeout value is the remaining time
+        # for the caller specified timeout - it is reduced as needed as
+        # we continue to loop checking the owner thread (unless it was
+        # smaller than WAIT_TIMEOUT in which case we will timeout the
+        # request the first time we check that current lock owner.
+
         timer = Timer(timeout=timeout)
         if self.debug_logging_enabled:
             self.logger.debug(
@@ -348,20 +376,26 @@ class SELock:
             )
         while True:
             if timer.timeout:
-                timeout_value = min(timer.timeout, 10)
+                timeout_value = min(timer.timeout, SELock.WAIT_TIMEOUT)
             else:
-                timeout_value = 10
+                timeout_value = SELock.WAIT_TIMEOUT
             # wait for lock to be granted to us
             if wait_event.wait(timeout=timeout_value):
                 return
 
             # we have waited long enough, check if owner still alive
             with self.se_lock_lock:
+                # We may have timed out by now if the caller specified a
+                # timeout value, but we give priority to the owner
+                # having become not alive and raise that error here
+                # instead since that is likely the root cause of the
+                # timeout.
                 if not self.owner_wait_q[0].thread.is_alive():
                     raise SELockOwnerNotAlive(
                         'The owner of the SELock is not alive and '
                         'will thus never release the lock. '
                         f'Owner thread = {self.owner_wait_q[0]}')
+
                 if timer.is_expired():
                     owner_waiter_desc = self.find_owner_waiter(
                         thread=threading.current_thread())
