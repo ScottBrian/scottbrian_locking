@@ -19,12 +19,13 @@ in shared mode by calling the obtain_share method. If the lock is
 currently not held or is currently held only by other threads that
 obtained it in shared mode, and no threads are waiting for the lock for
 exclusive mode, the new request is granted immediately. For all other
-cases, the request is queued and blocked until lock become available.
+cases, the request is queued and blocked until the lock become
+available.
 
 When a thread wants to write to a resource, it first requests the lock
 in exclusive mode by calling the obtain_excl method. If the lock is
 currently not held, the new request is granted immediately. For all
-other cases, the request is queued and blocked until lock become
+other cases, the request is queued and blocked until the lock become
 available.
 
 :Example: use SELock to coordinate access to a shared resource
@@ -33,27 +34,15 @@ available.
 >>> a_lock = SELock()
 >>> # Get lock in exclusive mode
 >>> with SELockExcl(a_lock):  # write to a
-...     a = 1
-...     print(f'under exclusive lock, a = {a}')
-under exclusive lock, a = 1
+...     msg = 'lock obtained exclusive'
+>>> print(msg)
+lock obtained exclusive
 
 >>> # Get lock in shared mode
 >>> with SELockShare(a_lock):  # read a
-...     print(f'under shared lock, a = {a}')
-under shared lock, a = 1
-
-
-The se_lock module contains:
-
-    1) SELock class with methods:
-
-       a. obtain_lock
-       b. release_lock
-    2) Error exception classes:
-
-       a. Incorrect_ModeSpecified
-
-    3) SELock context manager
+...     msg = 'lock obtained shared'
+>>> print(msg)
+lock obtained shared
 
 """
 ########################################################################
@@ -405,8 +394,9 @@ class SELock:
                 f'for SELock, caller {call_seq(latest=2, depth=2)}'
             )
         while True:
-            if timer.timeout:
-                timeout_value = min(timer.timeout, SELock.WAIT_TIMEOUT)
+            remaining_time = timer.remaining_time()
+            if remaining_time:
+                timeout_value = min(remaining_time, SELock.WAIT_TIMEOUT)
             else:
                 timeout_value = SELock.WAIT_TIMEOUT
             # wait for lock to be granted to us
@@ -661,8 +651,9 @@ class SELockShare:
         >>> a_lock = SELock()
         >>> # Get lock in shared mode
         >>> with SELockShare(a_lock):
-        ...     print(f'under shared lock')
-        under shared lock
+        ...     msg = 'lock obtained shared'
+        >>> print(msg)
+        lock obtained shared
 
         """
         self.se_lock = se_lock
@@ -715,8 +706,9 @@ class SELockExcl:
         >>> a_lock = SELock()
         >>> # Get lock in exclusive mode
         >>> with SELockExcl(a_lock):
-        ...     print(f'under exclusive lock')
-        under exclusive lock
+        ...     msg = 'lock obtained exclusive'
+        >>> print(msg)
+        lock obtained exclusive
 
         """
         self.se_lock = se_lock

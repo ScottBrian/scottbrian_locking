@@ -13,7 +13,8 @@ from typing import Any, cast, Optional
 # Third Party
 ########################################################################
 from scottbrian_utils.flower_box import print_flower_box_msg as flowers
-from scottbrian_utils.cmds import Cmds
+from scottbrian_utils.msgs import Msgs
+from scottbrian_utils.stop_watch import StopWatch
 import pytest
 
 ########################################################################
@@ -199,7 +200,7 @@ timeout_arg_list = [0.1, 0.5, 12]
 
 @pytest.fixture(params=timeout_arg_list)  # type: ignore
 def timeout_arg(request: Any) -> float:
-    """Using different release positions.
+    """Using different timeout values.
 
     Args:
         request: special fixture that returns the fixture params
@@ -391,14 +392,14 @@ class TestSELock:
                     logger.debug('f1 about to obtain excl c with timeout')
                     with SELockExcl(a_lock, timeout=timeout_arg):
                         logger.debug('f1 obtained excl c with timeout')
-                        cmds.queue_cmd('alpha')
-                        cmds.get_cmd('beta', timeout=cmds_get_to)
+                        msgs.queue_msg('alpha')
+                        msgs.get_msg('beta', timeout=msgs_get_to)
                 else:
                     logger.debug('f1 about to obtain excl c without timeout')
                     with SELockExcl(a_lock):
                         logger.debug('f1 obtained excl c without timeout')
-                        cmds.queue_cmd('alpha')
-                        cmds.get_cmd('beta', timeout=cmds_get_to)
+                        msgs.queue_msg('alpha')
+                        msgs.get_msg('beta', timeout=msgs_get_to)
             else:
                 if use_timeout_tf:
                     logger.debug('f1 about to obtain excl with timeout')
@@ -409,8 +410,8 @@ class TestSELock:
                     a_lock.obtain_excl()
                     logger.debug('f1 obtained excl without timeout')
 
-                cmds.queue_cmd('alpha')
-                cmds.get_cmd('beta', timeout=cmds_get_to)
+                msgs.queue_msg('alpha')
+                msgs.get_msg('beta', timeout=msgs_get_to)
 
                 a_lock.release()
 
@@ -419,14 +420,14 @@ class TestSELock:
                     logger.debug('f1 about to obtain share c with timeout')
                     with SELockShare(a_lock, timeout=timeout_arg):
                         logger.debug('f1 obtained share c with timeout')
-                        cmds.queue_cmd('alpha')
-                        cmds.get_cmd('beta', timeout=cmds_get_to)
+                        msgs.queue_msg('alpha')
+                        msgs.get_msg('beta', timeout=msgs_get_to)
                 else:
                     logger.debug('f1 about to obtain share c without timeout')
                     with SELockShare(a_lock):
                         logger.debug('f1 obtained share c without timeout')
-                        cmds.queue_cmd('alpha')
-                        cmds.get_cmd('beta', timeout=cmds_get_to)
+                        msgs.queue_msg('alpha')
+                        msgs.get_msg('beta', timeout=msgs_get_to)
             else:
                 if use_timeout_tf:
                     logger.debug('f1 about to obtain share with timeout')
@@ -437,21 +438,22 @@ class TestSELock:
                     a_lock.obtain_share()
                     logger.debug('f1 obtained share without timeout')
 
-                cmds.queue_cmd('alpha')
-                cmds.get_cmd('beta', timeout=cmds_get_to)
+                msgs.queue_msg('alpha')
+                msgs.get_msg('beta', timeout=msgs_get_to)
 
             logger.debug('f1 exiting')
 
         logger.debug('mainline entered')
 
-        cmds = Cmds()
+        msgs = Msgs()
+        stop_watch = StopWatch()
 
         a_lock = SELock()
 
-        to_low = timeout_arg * .9
-        to_high = timeout_arg * 1.1
+        to_low = timeout_arg
+        to_high = timeout_arg * 1.2
 
-        cmds_get_to = timeout_arg * 4 * 2
+        msgs_get_to = timeout_arg * 4 * 2
 
         if use_context2_arg == 0:
             ml_use_context_tf = False
@@ -472,63 +474,63 @@ class TestSELock:
         f1_thread.start()
 
         logger.debug('mainline about to wait 1')
-        cmds.get_cmd('alpha')
+        msgs.get_msg('alpha')
 
         logger.debug('mainline about to request excl 1')
 
-        cmds.start_clock(clock_iter=1)
+        stop_watch.start_clock(clock_iter=1)
         with pytest.raises(SELockObtainTimeout):
             if ml_use_context_tf:
                 with SELockExcl(a_lock, timeout=timeout_arg):
                     pass
             else:
                 a_lock.obtain_excl(timeout=timeout_arg)
-        assert to_low <= cmds.duration() <= to_high
+        assert to_low <= stop_watch.duration() <= to_high
 
         logger.debug('mainline about to request share 1')
-        cmds.start_clock(clock_iter=2)
+        stop_watch.start_clock(clock_iter=2)
         with pytest.raises(SELockObtainTimeout):
             if ml_use_context_tf:
                 with SELockShare(a_lock, timeout=timeout_arg):
                     pass
             else:
                 a_lock.obtain_share(timeout=timeout_arg)
-        assert to_low <= cmds.duration() <= to_high
+        assert to_low <= stop_watch.duration() <= to_high
 
         logger.debug('mainline about to request excl 2')
-        cmds.start_clock(clock_iter=3)
+        stop_watch.start_clock(clock_iter=3)
         with pytest.raises(SELockObtainTimeout):
             if ml_use_context_tf:
                 with SELockExcl(a_lock, timeout=timeout_arg):
                     pass
             else:
                 a_lock.obtain_excl(timeout=timeout_arg)
-        assert to_low <= cmds.duration() <= to_high
+        assert to_low <= stop_watch.duration() <= to_high
 
         logger.debug('mainline about to request share 2')
-        cmds.start_clock(clock_iter=4)
+        stop_watch.start_clock(clock_iter=4)
         with pytest.raises(SELockObtainTimeout):
             if ml_use_context_tf:
                 with SELockShare(a_lock, timeout=timeout_arg):
                     pass
             else:
                 a_lock.obtain_share(timeout=timeout_arg)
-        assert to_low <= cmds.duration() <= to_high
+        assert to_low <= stop_watch.duration() <= to_high
 
-        cmds.queue_cmd('beta')
+        msgs.queue_msg('beta')
 
         logger.debug('mainline about to wait 2')
-        cmds.get_cmd('alpha')
+        msgs.get_msg('alpha')
 
         logger.debug('mainline about to request excl 3')
-        cmds.start_clock(clock_iter=5)
+        stop_watch.start_clock(clock_iter=5)
         with pytest.raises(SELockObtainTimeout):
             if ml_use_context_tf:
                 with SELockExcl(a_lock, timeout=timeout_arg):
                     pass
             else:
                 a_lock.obtain_excl(timeout=timeout_arg)
-        assert to_low <= cmds.duration() <= to_high
+        assert to_low <= stop_watch.duration() <= to_high
 
         logger.debug('mainline about to request share 3')
         if ml_use_context_tf:
@@ -539,14 +541,14 @@ class TestSELock:
             a_lock.release()
 
         logger.debug('mainline about to request excl 4')
-        cmds.start_clock(clock_iter=6)
+        stop_watch.start_clock(clock_iter=6)
         with pytest.raises(SELockObtainTimeout):
             if ml_use_context_tf:
                 with SELockExcl(a_lock, timeout=timeout_arg):
                     pass
             else:
                 a_lock.obtain_excl(timeout=timeout_arg)
-        assert to_low <= cmds.duration() <= to_high
+        assert to_low <= stop_watch.duration() <= to_high
 
         logger.debug('mainline about to request share 4')
         if ml_use_context_tf:
@@ -556,7 +558,7 @@ class TestSELock:
             a_lock.obtain_share(timeout=timeout_arg)
             a_lock.release()
 
-        cmds.queue_cmd('beta')
+        msgs.queue_msg('beta')
         f1_thread.join()
         logger.debug('mainline exiting')
 

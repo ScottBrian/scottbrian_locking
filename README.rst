@@ -12,19 +12,19 @@ and write shared resources in a multi-threaded application.
 
 
 
->>> from scottbrian_locking.se_lock import SELock
->>> a_lock = SELock()
-
+>>> from scottbrian_locking import se_lock as sel
+>>> a_lock = sel.SELock()
 >>> # Get lock in exclusive mode
->>> with a_lock(SELock.EXCL):  # write to a
->>>     a = 1
->>>     print(a)
+>>> with sel.SELockExcl(a_lock):
+...     msg = 'lock obtained exclusive'
+>>> print(msg)
+lock obtained exclusive
 
 >>> # Get lock in shared mode
->>> with a_lock(SELock.SHARE):  # read a
->>>     print(a)
-
-
+>>> with sel.SELockShare(a_lock):
+...     msg = 'lock obtained shared'
+>>> print(msg)
+lock obtained shared
 
 
 .. image:: https://img.shields.io/badge/security-bandit-yellow.svg
