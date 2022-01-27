@@ -28,9 +28,36 @@ currently not held, the new request is granted immediately. For all
 other cases, the request is queued and blocked until the lock become
 available.
 
-:Example: use SELock to coordinate access to a shared resource
+The SELock provide two ways to use the lock:
+    1) methods obtain_excl, obtain_share, and release
+    2) context managers SELockExcl and SELockShare
+
+:Example: use methods obtain_excl, obtain_share, and release to
+          coordinate access to a shared resource
 
 >>> from scottbrian_locking.se_lock import SELock
+>>> a_lock = SELock()
+>>> # Get lock in exclusive mode
+>>> a_lock.obtain_excl()
+>>> print('lock obtained in exclusive mode')
+lock obtained in exclusive mode
+
+>>> # release the lock
+>>> a_lock.release()
+
+>>> # Get lock in shared mode
+>>> a_lock.obtain_share()
+>>> print('lock obtained in shared mode')
+lock obtained in shared mode
+
+>>> # release the lock
+>>> a_lock.release()
+
+
+:Example: use SELockExcl and SELockShare context managers to coordinate
+          access to a shared resource
+
+>>> from scottbrian_locking.se_lock import SELock, SELockExcl, SELockShare
 >>> a_lock = SELock()
 >>> # Get lock in exclusive mode
 >>> with SELockExcl(a_lock):  # write to a

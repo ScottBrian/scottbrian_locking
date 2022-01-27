@@ -6,6 +6,7 @@ include *.py
 recursive-include src *.pyi
 recursive-include src *.typed
 include *.yml
+include docs/source/_static
 include docs/requirements.txt
 recursive-include docs *.bat
 recursive-include docs *.py

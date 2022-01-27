@@ -10,8 +10,6 @@ and write shared resources in a multi-threaded application.
 
 :Example: use SELock to coordinate access to a shared resource
 
-
-
 >>> from scottbrian_locking import se_lock as sel
 >>> a_lock = sel.SELock()
 >>> # Get lock in exclusive mode
