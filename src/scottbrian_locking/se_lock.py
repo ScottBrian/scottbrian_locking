@@ -5,7 +5,7 @@ SELock
 ========
 
 The SELock is a shared/exclusive lock that you can use to safely read
-from and write to resources used in a multi-threaded application.
+from and write to resources in a multi-threaded application.
 
 The SELock does not actually protect resources directly. Instead, the
 SELock provide coordination by blocking threads when they request a lock
@@ -13,24 +13,29 @@ that is currently owned by another thread. That means the application
 must ensure it appropriately requests the lock before attempting to read
 from or write to a resource.
 
-The application must first instatiate an SELock for a specific resource.
-When a thread wants to read from a resource, it first requests the lock
-in shared mode by calling the obtain_share method. If the lock is
-currently not held or is currently held only by other threads that
-obtained it in shared mode, and no threads are waiting for the lock for
-exclusive mode, the new request is granted immediately. For all other
-cases, the request is queued and blocked until the lock become
-available.
+The application must first instatiate an SELock object that can be
+accessed by the threads in the application. When a thread wants to read
+from a resource it requests the lock for shared mode. If the lock is
+currently not held or is currently held by other threads that in
+shared mode, and no threads are waiting for the lock for exclusive mode,
+the new request is granted immediately. For all other cases, the request
+is queued and blocked until the lock become available.
 
-When a thread wants to write to a resource, it first requests the lock
-in exclusive mode by calling the obtain_excl method. If the lock is
-currently not held, the new request is granted immediately. For all
-other cases, the request is queued and blocked until the lock become
-available.
+When a thread wants to write to a resource it requests the lock
+in exclusive mode. If the lock is currently not held, the new request is
+granted immediately. For all other cases, the request is queued and
+blocked until the lock become available.
+
+The application can instantiate a single lock to protect any number of
+resources, or several locks for more granularity where each lock can
+protect a single resource. The application design will need to consider
+performance (more granularity may perform better) and
+reliability (more granularity may lead to deadlock situtations).
 
 The SELock provide two ways to use the lock:
     1) methods obtain_excl, obtain_share, and release
-    2) context managers SELockExcl and SELockShare
+    2) context managers SELockExcl, SELockShare, and SELockObtain
+
 
 :Example: use methods obtain_excl, obtain_share, and release to
           coordinate access to a shared resource
@@ -57,16 +62,36 @@ lock obtained in shared mode
 :Example: use SELockExcl and SELockShare context managers to coordinate
           access to a shared resource
 
->>> from scottbrian_locking.se_lock import SELock, SELockExcl, SELockShare
+>>> from scottbrian_locking.se_lock import (SELock, SELockExcl,
+...                                         SELockShare)
 >>> a_lock = SELock()
 >>> # Get lock in exclusive mode
->>> with SELockExcl(a_lock):  # write to a
+>>> with SELockExcl(a_lock):  # write access
 ...     msg = 'lock obtained exclusive'
 >>> print(msg)
 lock obtained exclusive
 
 >>> # Get lock in shared mode
->>> with SELockShare(a_lock):  # read a
+>>> with SELockShare(a_lock):  # read access
+...     msg = 'lock obtained shared'
+>>> print(msg)
+lock obtained shared
+
+
+:Example: use SELockObtain context managers to coordinate
+          access to a shared resource
+
+>>> from scottbrian_locking.se_lock import (SELock, SELockObtain,
+...                                         SELockObtainMode)
+>>> a_lock = SELock()
+>>> # Get lock in exclusive mode
+>>> with SELockObtain(a_lock, SELockObtainMode.Exclusive):  # write
+...     msg = 'lock obtained exclusive'
+>>> print(msg)
+lock obtained exclusive
+
+>>> # Get lock in shared mode
+>>> with SELockObtain(a_lock, SELockObtainMode.Share):  # read
 ...     msg = 'lock obtained shared'
 >>> print(msg)
 lock obtained shared
@@ -81,6 +106,7 @@ import logging
 import threading
 from typing import (Any, Final, NamedTuple, Optional, Type,
                     TYPE_CHECKING, Union)
+from typing_extensions import TypeAlias
 
 ########################################################################
 # Third Party
@@ -95,7 +121,7 @@ from scottbrian_utils.timer import Timer
 ########################################################################
 # type aliases
 ########################################################################
-OptIntFloat = Optional[Union[int, float]]
+OptIntFloat: TypeAlias = Optional[Union[int, float]]
 
 
 ########################################################################
@@ -129,6 +155,12 @@ class SELockObtainTimeout(SELockError):
 class SELockOwnerNotAlive(SELockError):
     """SELock exception for lock owner not alive."""
     pass
+
+
+class SELockObtainMode(Enum):
+    """Enum for SELockObtain to specify shared or exclusive control."""
+    Share = auto()
+    Exclusive = auto()
 
 
 ########################################################################
@@ -260,7 +292,7 @@ class SELock:
 
         """
         if TYPE_CHECKING:
-            __class__: Type[SELock]
+            __class__: Type[SELock]  # noqa: F842
         classname = self.__class__.__name__
         parms = ''  # placeholder for future parms
 
@@ -652,7 +684,7 @@ class SELock:
 # SELock Context Manager for Shared Control
 ########################################################################
 class SELockShare:
-    """Class for SELockShared."""
+    """Context manager for shared control."""
     def __init__(self,
                  se_lock: SELock,
                  timeout: OptIntFloat = None) -> None:
@@ -706,7 +738,7 @@ class SELockShare:
 # SELock Context Manager for Exclusive Control
 ########################################################################
 class SELockExcl:
-    """Class for SELockExcl."""
+    """Context manager for exclusive control."""
 
     def __init__(self,
                  se_lock: SELock,
@@ -744,6 +776,82 @@ class SELockExcl:
     def __enter__(self) -> None:
         """Context manager enter method."""
         self.se_lock.obtain_excl(timeout=self.timeout)
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        """Context manager exit method.
+
+        Args:
+            exc_type: exception type or None
+            exc_val: exception value or None
+            exc_tb: exception traceback or None
+
+        """
+        self.se_lock.release()
+
+
+########################################################################
+# SELock Context Manager for Exclusive or Share Control
+########################################################################
+class SELockObtain:
+    """Context manager for shared or exclusive control."""
+
+    def __init__(self,
+                 se_lock: SELock,
+                 obtain_mode: SELockObtainMode,
+                 timeout: OptIntFloat = None) -> None:
+        """Initialize shared or exclusive lock context manager.
+
+        Args:
+            se_lock: instance of SELock
+            obtain_mode: specifies the lock mode required as Share or
+                Exclusive
+            timeout: number of seconds that the request is allowed to
+                       wait for the lock before an error is raised
+
+        Raises:
+            SELockOwnerNotAlive: The owner of the SELock is not alive
+                and will thus never release the lock.
+            SELockObtainTimeout: A lock obtain request has timed out
+                waiting for the current owner thread to release the
+                lock.
+
+        .. # noqa: DAR402
+
+        :Example: obtain an SELock in exclusive mode
+
+        >>> from scottbrian_locking.se_lock import (SELock,
+        ...                                         SELockObtain,
+        ...                                         SELockObtainMode)
+        >>> a_lock = SELock()
+        >>> # Get lock in exclusive mode
+        >>> with SELockObtain(a_lock,
+        ...                   obtain_mode=SELockObtainMode.Exclusive):
+        ...     msg = 'lock obtained exclusive'
+        >>> print(msg)
+        lock obtained exclusive
+
+        :Example: obtain an SELock in shared mode
+
+        >>> from scottbrian_locking.se_lock import SELock
+        >>> a_lock = SELock()
+        >>> # Get lock in shared mode
+        >>> with SELockObtain(a_lock,
+        ...                   obtain_mode=SELockObtainMode.Share):
+        ...     msg = 'lock obtained shared'
+        >>> print(msg)
+        lock obtained shared
+
+        """
+        self.se_lock = se_lock
+        self.obtain_mode = obtain_mode
+        self.timeout = timeout
+
+    def __enter__(self) -> None:
+        """Context manager enter method."""
+        if self.obtain_mode == SELockObtainMode.Share:
+            self.se_lock.obtain_share(timeout=self.timeout)
+        else:
+            self.se_lock.obtain_excl(timeout=self.timeout)
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Context manager exit method.

@@ -53,6 +53,10 @@ Release History
 * 1.0.0
     * Initial release
 
+* 1.1.0
+    * Add RELockObtain context manager
+    * support python 3.11
+
 
 Meta
 ====
