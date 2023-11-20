@@ -1,9 +1,39 @@
+[project]
+name = "scottbrian_locking"
+version = "2.0.0"
+description = "Exclusive and shared locking"
+readme = "README.rst"
+requires-python = ">=3.12"
+license = {file = "LICENSE.txt"}
+keywords = ["lock", "blocking"]
+authors = [{name = "Scott Tuttle", email = "sbtuttle@outlook.com"}]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: Microsoft :: Windows :: Windows 10"]
+dependencies = [
+    "typing_extensions",
+    "scottbrian-utils",
+]
+
+[tool.setuptools]
+packages = ["scottbrian_locking"]
+package-dir = {"" = "src"}
+
+[project.urls]
+Documentation = "https://scottbrian-locking.readthedocs.io/en/latest/"
+Source = "https://github.com/ScottBrian/scottbrian_locking.git"
+
 [build-system]
 requires = [
-    "setuptools >= 65.5.1",
+    "setuptools >= 69.0.0",
 #    "setuptools_scm[toml] >= 6.0",
 #    "setuptools_scm_git_archive",
-    "wheel >= 0.38.1"
+    "wheel >= 0.41.3"
 ]
 build-backend = 'setuptools.build_meta'
 

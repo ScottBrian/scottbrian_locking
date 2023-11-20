@@ -687,11 +687,15 @@ class SELockShare:
     """Context manager for shared control."""
     def __init__(self,
                  se_lock: SELock,
+                 obtain_tf: bool = True,
                  timeout: OptIntFloat = None) -> None:
         """Initialize shared lock context manager.
 
         Args:
             se_lock: instance of SELock
+            obtain_tf: allows the obtain to be conditional to allow
+                coding the with statement and then getting or not
+                getting the lock as dynamically required
             timeout: number of seconds that the request is allowed to
                        wait for the lock before an error is raised
 
@@ -714,13 +718,43 @@ class SELockShare:
         >>> print(msg)
         lock obtained shared
 
+        :Example: obtain an SELock in shared mode conditionally
+
+        >>> from scottbrian_locking.se_lock import SELock
+        >>> a_lock = SELock()
+        >>> # Get lock in shared mode conditionally
+        >>> condition_var = True
+        >>> with SELockShare(a_lock, obtain_tf=condition_var):
+        ...     if condition_var:
+        ...         msg = 'lock obtained shared'
+        ...     else:
+        ...         msg = 'lock not obtained'
+        >>> print(msg)
+        lock obtained shared
+
+        :Example: obtain an SELock in shared mode conditionally
+
+        >>> from scottbrian_locking.se_lock import SELock
+        >>> a_lock = SELock()
+        >>> # Get lock in shared mode conditionally
+        >>> condition_var = False
+        >>> with SELockShare(a_lock, obtain_tf=condition_var):
+        ...     if condition_var:
+        ...         msg = 'lock obtained shared'
+        ...     else:
+        ...         msg = 'lock not obtained'
+        >>> print(msg)
+        lock not obtained
+
         """
         self.se_lock = se_lock
+        self.obtain_tf = obtain_tf
         self.timeout = timeout
 
     def __enter__(self) -> None:
         """Context manager enter method."""
-        self.se_lock.obtain_share(timeout=self.timeout)
+        if self.obtain_tf:
+            self.se_lock.obtain_share(timeout=self.timeout)
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Context manager exit method.
@@ -731,7 +765,8 @@ class SELockShare:
             exc_tb: exception traceback or None
 
         """
-        self.se_lock.release()
+        if self.obtain_tf:
+            self.se_lock.release()
 
 
 ########################################################################
@@ -742,11 +777,15 @@ class SELockExcl:
 
     def __init__(self,
                  se_lock: SELock,
+                 obtain_tf: bool = True,
                  timeout: OptIntFloat = None) -> None:
         """Initialize exclusive lock context manager.
 
         Args:
             se_lock: instance of SELock
+            obtain_tf: allows the obtain to be conditional to allow
+                coding the with statement and then getting or not
+                getting the lock as dynamically required
             timeout: number of seconds that the request is allowed to
                        wait for the lock before an error is raised
 
@@ -769,13 +808,43 @@ class SELockExcl:
         >>> print(msg)
         lock obtained exclusive
 
+        :Example: obtain an SELock in exclusive mode conditionally
+
+        >>> from scottbrian_locking.se_lock import SELock
+        >>> a_lock = SELock()
+        >>> # Get lock in exclusive mode conditionally
+        >>> condition_var = True
+        >>> with SELockExcl(a_lock, obtain_tf=condition_var):
+        ...     if condition_var:
+        ...         msg = 'lock obtained exclusive'
+        ...     else:
+        ...         msg = 'lock not obtained'
+        >>> print(msg)
+        lock obtained exclusive
+
+        :Example: obtain an SELock in exclusive mode conditionally
+
+        >>> from scottbrian_locking.se_lock import SELock
+        >>> a_lock = SELock()
+        >>> # Get lock in exclusive mode conditionally
+        >>> condition_var = False
+        >>> with SELockExcl(a_lock, obtain_tf=condition_var):
+        ...     if condition_var:
+        ...         msg = 'lock obtained exclusive'
+        ...     else:
+        ...         msg = 'lock not obtained'
+        >>> print(msg)
+        lock not obtained
+
         """
         self.se_lock = se_lock
+        self.obtain_tf = obtain_tf
         self.timeout = timeout
 
     def __enter__(self) -> None:
         """Context manager enter method."""
-        self.se_lock.obtain_excl(timeout=self.timeout)
+        if self.obtain_tf:
+            self.se_lock.obtain_excl(timeout=self.timeout)
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Context manager exit method.
@@ -786,7 +855,8 @@ class SELockExcl:
             exc_tb: exception traceback or None
 
         """
-        self.se_lock.release()
+        if self.obtain_tf:
+            self.se_lock.release()
 
 
 ########################################################################
@@ -798,6 +868,7 @@ class SELockObtain:
     def __init__(self,
                  se_lock: SELock,
                  obtain_mode: SELockObtainMode,
+                 obtain_tf: bool = True,
                  timeout: OptIntFloat = None) -> None:
         """Initialize shared or exclusive lock context manager.
 
@@ -805,6 +876,9 @@ class SELockObtain:
             se_lock: instance of SELock
             obtain_mode: specifies the lock mode required as Share or
                 Exclusive
+            obtain_tf: allows the obtain to be conditional to allow
+                coding the with statement and then getting or not
+                getting the lock as dynamically required
             timeout: number of seconds that the request is allowed to
                        wait for the lock before an error is raised
 
@@ -841,17 +915,83 @@ class SELockObtain:
         >>> print(msg)
         lock obtained shared
 
+        :Example: obtain an SELock in exclusive mode conditionally
+
+        >>> from scottbrian_locking.se_lock import SELock
+        >>> a_lock = SELock()
+        >>> # Get lock in exclusive mode conditionally
+        >>> condition_var = True
+        >>> with SELockObtain(a_lock,
+        ...                   obtain_mode=SELockObtainMode.Exclusive,
+        ...                   obtain_tf=condition_var):
+        ...     if condition_var:
+        ...         msg = 'lock obtained exclusive'
+        ...     else:
+        ...         msg = 'lock was not obtained'
+        >>> print(msg)
+        lock obtained exclusive
+
+        :Example: obtain an SELock in exclusive mode conditionally
+
+        >>> from scottbrian_locking.se_lock import SELock
+        >>> a_lock = SELock()
+        >>> # Get lock in exclusive mode conditionally
+        >>> condition_var = False
+        >>> with SELockObtain(a_lock,
+        ...                   obtain_mode=SELockObtainMode.Exclusive,
+        ...                   obtain_tf=condition_var):
+        ...     if condition_var:
+        ...         msg = 'lock obtained exclusive'
+        ...     else:
+        ...         msg = 'lock was not obtained'
+        >>> print(msg)
+        lock was not obtained
+
+        :Example: obtain an SELock in shared mode conditionally
+
+        >>> from scottbrian_locking.se_lock import SELock
+        >>> a_lock = SELock()
+        >>> # Get lock in shared mode conditionally
+        >>> condition_var = True
+        >>> with SELockObtain(a_lock,
+        ...                   obtain_mode=SELockObtainMode.Share,
+        ...                   obtain_tf=condition_var):
+        ...     if condition_var:
+        ...         msg = 'lock obtained shared'
+        ...     else:
+        ...         msg = 'lock was not obtained'
+        >>> print(msg)
+        lock obtained shared
+
+        :Example: obtain an SELock in shared mode conditionally
+
+        >>> from scottbrian_locking.se_lock import SELock
+        >>> a_lock = SELock()
+        >>> # Get lock in shared mode conditionally
+        >>> condition_var = False
+        >>> with SELockObtain(a_lock,
+        ...                   obtain_mode=SELockObtainMode.Share,
+        ...                   obtain_tf=condition_var):
+        ...     if condition_var:
+        ...         msg = 'lock obtained shared'
+        ...     else:
+        ...         msg = 'lock was not obtained'
+        >>> print(msg)
+        lock was not obtained
+
         """
         self.se_lock = se_lock
         self.obtain_mode = obtain_mode
+        self.obtain_tf = obtain_tf
         self.timeout = timeout
 
     def __enter__(self) -> None:
         """Context manager enter method."""
-        if self.obtain_mode == SELockObtainMode.Share:
-            self.se_lock.obtain_share(timeout=self.timeout)
-        else:
-            self.se_lock.obtain_excl(timeout=self.timeout)
+        if self.obtain_tf:
+            if self.obtain_mode == SELockObtainMode.Share:
+                self.se_lock.obtain_share(timeout=self.timeout)
+            else:
+                self.se_lock.obtain_excl(timeout=self.timeout)
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Context manager exit method.
@@ -862,4 +1002,5 @@ class SELockObtain:
             exc_tb: exception traceback or None
 
         """
-        self.se_lock.release()
+        if self.obtain_tf:
+            self.se_lock.release()

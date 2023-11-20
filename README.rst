@@ -57,6 +57,11 @@ Release History
     * Add RELockObtain context manager
     * support python 3.11
 
+* 2.0.0
+    * Add obtain_tf to context manager
+    * delete setup.cfg
+    * support python 3.12
+    * drop support for python < 3.12
 
 Meta
 ====
