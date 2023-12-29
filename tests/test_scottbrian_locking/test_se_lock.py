@@ -21,8 +21,7 @@ import pytest
 ########################################################################
 # Local
 ########################################################################
-from scottbrian_locking.se_lock import (SELock, SELockShare, SELockExcl,
-                                        SELockObtain)
+from scottbrian_locking.se_lock import SELock, SELockShare, SELockExcl, SELockObtain
 from scottbrian_locking.se_lock import AttemptedReleaseByExclusiveWaiter
 from scottbrian_locking.se_lock import AttemptedReleaseBySharedWaiter
 from scottbrian_locking.se_lock import AttemptedReleaseOfUnownedLock
@@ -35,7 +34,7 @@ from scottbrian_locking.se_lock import SELockObtainMode
 # Set up logging
 ########################################################################
 logger = logging.getLogger(__name__)
-logger.debug('about to start the tests')
+logger.debug("about to start the tests")
 
 
 ########################################################################
@@ -43,26 +42,31 @@ logger.debug('about to start the tests')
 ########################################################################
 class ErrorTstSELock(Exception):
     """Base class for exception in this module."""
+
     pass
 
 
 class InvalidRouteNum(ErrorTstSELock):
     """InvalidRouteNum exception class."""
+
     pass
 
 
 class InvalidModeNum(ErrorTstSELock):
     """InvalidModeNum exception class."""
+
     pass
 
 
 class BadRequestStyleArg(ErrorTstSELock):
     """BadRequestStyleArg exception class."""
+
     pass
 
 
 class ContextArg(Enum):
     """ContextArg used to select which for of obtain lock to use."""
+
     NoContext = auto()
     ContextExclShare = auto()
     ContextObtain = auto()
@@ -71,9 +75,11 @@ class ContextArg(Enum):
 ########################################################################
 # context_arg
 ########################################################################
-context_arg_list = [ContextArg.NoContext,
-                    ContextArg.ContextExclShare,
-                    ContextArg.ContextObtain]
+context_arg_list = [
+    ContextArg.NoContext,
+    ContextArg.ContextExclShare,
+    ContextArg.ContextObtain,
+]
 
 
 @pytest.fixture(params=context_arg_list)  # type: ignore
@@ -272,6 +278,7 @@ class TestSELockErrors:
 
     def test_se_lock_release_owner_not_alive(self) -> None:
         """Test owner become not alive while waiting for lock."""
+
         ################################################################
         # SELockOwnerNotAlive
         ################################################################
@@ -294,6 +301,7 @@ class TestSELockErrors:
 
     def test_se_lock_release_by_exclusive_waiter(self) -> None:
         """Test release by exclusive waiter."""
+
         ################################################################
         # AttemptedReleaseByExclusiveWaiter
         ################################################################
@@ -337,6 +345,7 @@ class TestSELockErrors:
 
     def test_se_lock_release_by_shared_waiter(self) -> None:
         """Test release by shared waiter."""
+
         ################################################################
         # AttemptedReleaseBySharedWaiter
         ################################################################
@@ -386,15 +395,81 @@ class TestSELockBasic:
     """Class TestSELockBasic."""
 
     ####################################################################
+    # log_test_msg
+    ####################################################################
+    def log_test_msg(self, log_msg: str) -> None:
+        """Issue log msgs for test rtn.
+
+        Args:
+            log_msg: the message to log
+
+        """
+        logger.debug(log_msg, stacklevel=2)
+
+    ####################################################################
     # repr
     ####################################################################
     def test_se_lock_repr(self) -> None:
         """Test the repr of SELock."""
         a_se_lock = SELock()
 
-        expected_repr_str = 'SELock()'
+        expected_repr_str = "SELock()"
 
         assert repr(a_se_lock) == expected_repr_str
+
+    ####################################################################
+    # repr
+    ####################################################################
+    def test_se_lock_obtain_excl(self) -> None:
+        """Test exclusive lock obtain."""
+
+        self.log_test_msg("mainline entry")
+
+        a_se_lock = SELock()
+
+        self.log_test_msg("about to do step 1")
+        a_se_lock.obtain_excl()
+
+        self.log_test_msg("about to do step 2")
+        a_se_lock.release()
+
+        self.log_test_msg("about to do step 3")
+        a_se_lock.obtain_excl_recursive()
+
+        self.log_test_msg("about to do step 4")
+        a_se_lock.release()
+
+        self.log_test_msg("about to do step 5")
+        a_se_lock.obtain_excl()
+
+        self.log_test_msg("about to do step 6")
+        a_se_lock.obtain_excl_recursive()
+
+        self.log_test_msg("about to do step 7")
+        a_se_lock.release()
+
+        self.log_test_msg("about to do step 8")
+        a_se_lock.release()
+
+        self.log_test_msg("about to do step 9")
+        a_se_lock.obtain_excl_recursive()
+
+        self.log_test_msg("about to do step 10")
+        a_se_lock.obtain_excl_recursive()
+
+        self.log_test_msg("about to do step 3")
+        a_se_lock.release()
+
+        self.log_test_msg("about to do step 3")
+        a_se_lock.release()
+
+        self.log_test_msg("about to do step 3")
+        a_se_lock.obtain_excl()
+
+        self.log_test_msg("about to do step 3")
+        a_se_lock.release()
+
+        self.log_test_msg("mainline exit")
 
 
 ########################################################################
@@ -406,11 +481,13 @@ class TestSELock:
     ####################################################################
     # test_se_lock_timeout
     ####################################################################
-    def test_se_lock_timeout(self,
-                             timeout_arg: float,
-                             use_timeout_arg: int,
-                             ml_context_arg: ContextArg,
-                             f1_context_arg: ContextArg) -> None:
+    def test_se_lock_timeout(
+        self,
+        timeout_arg: float,
+        use_timeout_arg: int,
+        ml_context_arg: ContextArg,
+        f1_context_arg: ContextArg,
+    ) -> None:
         """Method to test se_lock without using context manager.
 
         Args:
@@ -421,8 +498,7 @@ class TestSELock:
 
         """
 
-        def f1(use_timeout_tf: bool,
-               f1_context: ContextArg) -> None:
+        def f1(use_timeout_tf: bool, f1_context: ContextArg) -> None:
             """Function to get the lock and wait.
 
             Args:
@@ -431,15 +507,13 @@ class TestSELock:
                 f1_context: specifies how f1 obtains the lock
 
             """
-            logger.debug('f1 entered')
+            logger.debug("f1 entered")
 
             ############################################################
             # Excl mode
             ############################################################
-            obtaining_log_msg = (f'f1 obtaining excl {f1_context=} '
-                                 f'{use_timeout_tf=}')
-            obtained_log_msg = (f'f1 obtained excl {f1_context=} '
-                                f'{use_timeout_tf=}')
+            obtaining_log_msg = f"f1 obtaining excl {f1_context=} " f"{use_timeout_tf=}"
+            obtained_log_msg = f"f1 obtained excl {f1_context=} " f"{use_timeout_tf=}"
             if f1_context == ContextArg.NoContext:
                 if use_timeout_tf:
                     logger.debug(obtaining_log_msg)
@@ -450,8 +524,8 @@ class TestSELock:
                     a_lock.obtain_excl()
                     logger.debug(obtained_log_msg)
 
-                msgs.queue_msg('alpha')
-                msgs.get_msg('beta', timeout=msgs_get_to)
+                msgs.queue_msg("alpha")
+                msgs.get_msg("beta", timeout=msgs_get_to)
 
                 a_lock.release()
 
@@ -460,38 +534,39 @@ class TestSELock:
                     logger.debug(obtaining_log_msg)
                     with SELockExcl(a_lock, timeout=timeout_arg):
                         logger.debug(obtained_log_msg)
-                        msgs.queue_msg('alpha')
-                        msgs.get_msg('beta', timeout=msgs_get_to)
+                        msgs.queue_msg("alpha")
+                        msgs.get_msg("beta", timeout=msgs_get_to)
                 else:
                     logger.debug(obtaining_log_msg)
                     with SELockExcl(a_lock):
                         logger.debug(obtained_log_msg)
-                        msgs.queue_msg('alpha')
-                        msgs.get_msg('beta', timeout=msgs_get_to)
+                        msgs.queue_msg("alpha")
+                        msgs.get_msg("beta", timeout=msgs_get_to)
             else:
                 if use_timeout_tf:
                     logger.debug(obtaining_log_msg)
-                    with SELockObtain(a_lock,
-                                      obtain_mode=SELockObtainMode.Exclusive,
-                                      timeout=timeout_arg):
+                    with SELockObtain(
+                        a_lock,
+                        obtain_mode=SELockObtainMode.Exclusive,
+                        timeout=timeout_arg,
+                    ):
                         logger.debug(obtained_log_msg)
-                        msgs.queue_msg('alpha')
-                        msgs.get_msg('beta', timeout=msgs_get_to)
+                        msgs.queue_msg("alpha")
+                        msgs.get_msg("beta", timeout=msgs_get_to)
                 else:
                     logger.debug(obtaining_log_msg)
-                    with SELockObtain(a_lock,
-                                      obtain_mode=SELockObtainMode.Exclusive):
+                    with SELockObtain(a_lock, obtain_mode=SELockObtainMode.Exclusive):
                         logger.debug(obtained_log_msg)
-                        msgs.queue_msg('alpha')
-                        msgs.get_msg('beta', timeout=msgs_get_to)
+                        msgs.queue_msg("alpha")
+                        msgs.get_msg("beta", timeout=msgs_get_to)
 
             ############################################################
             # Share mode
             ############################################################
-            obtaining_log_msg = (f'f1 obtaining share {f1_context=} '
-                                 f'{use_timeout_tf=}')
-            obtained_log_msg = (f'f1 obtained share {f1_context=} '
-                                f'{use_timeout_tf=}')
+            obtaining_log_msg = (
+                f"f1 obtaining share {f1_context=} " f"{use_timeout_tf=}"
+            )
+            obtained_log_msg = f"f1 obtained share {f1_context=} " f"{use_timeout_tf=}"
             if f1_context == ContextArg.NoContext:
                 if use_timeout_tf:
                     logger.debug(obtaining_log_msg)
@@ -502,8 +577,8 @@ class TestSELock:
                     a_lock.obtain_share()
                     logger.debug(obtained_log_msg)
 
-                msgs.queue_msg('alpha')
-                msgs.get_msg('beta', timeout=msgs_get_to)
+                msgs.queue_msg("alpha")
+                msgs.get_msg("beta", timeout=msgs_get_to)
 
                 # a_lock.release()  @sbt why no release?
 
@@ -512,37 +587,36 @@ class TestSELock:
                     logger.debug(obtaining_log_msg)
                     with SELockShare(a_lock, timeout=timeout_arg):
                         logger.debug(obtained_log_msg)
-                        msgs.queue_msg('alpha')
-                        msgs.get_msg('beta', timeout=msgs_get_to)
+                        msgs.queue_msg("alpha")
+                        msgs.get_msg("beta", timeout=msgs_get_to)
                 else:
                     logger.debug(obtaining_log_msg)
                     with SELockShare(a_lock):
                         logger.debug(obtained_log_msg)
-                        msgs.queue_msg('alpha')
-                        msgs.get_msg('beta', timeout=msgs_get_to)
+                        msgs.queue_msg("alpha")
+                        msgs.get_msg("beta", timeout=msgs_get_to)
             else:
                 if use_timeout_tf:
                     logger.debug(obtaining_log_msg)
-                    with SELockObtain(a_lock,
-                                      obtain_mode=SELockObtainMode.Share,
-                                      timeout=timeout_arg):
+                    with SELockObtain(
+                        a_lock, obtain_mode=SELockObtainMode.Share, timeout=timeout_arg
+                    ):
                         logger.debug(obtained_log_msg)
-                        msgs.queue_msg('alpha')
-                        msgs.get_msg('beta', timeout=msgs_get_to)
+                        msgs.queue_msg("alpha")
+                        msgs.get_msg("beta", timeout=msgs_get_to)
                 else:
                     logger.debug(obtaining_log_msg)
-                    with SELockObtain(a_lock,
-                                      obtain_mode=SELockObtainMode.Share):
+                    with SELockObtain(a_lock, obtain_mode=SELockObtainMode.Share):
                         logger.debug(obtained_log_msg)
-                        msgs.queue_msg('alpha')
-                        msgs.get_msg('beta', timeout=msgs_get_to)
+                        msgs.queue_msg("alpha")
+                        msgs.get_msg("beta", timeout=msgs_get_to)
 
-            logger.debug('f1 exiting')
+            logger.debug("f1 exiting")
 
         ################################################################
         # Mainline
         ################################################################
-        logger.debug('mainline entered')
+        logger.debug("mainline entered")
 
         msgs = Msgs()
         stop_watch = StopWatch()
@@ -554,15 +628,13 @@ class TestSELock:
 
         msgs_get_to = timeout_arg * 4 * 2
 
-        f1_thread = threading.Thread(target=f1,
-                                     args=(use_timeout_arg,
-                                           f1_context_arg))
+        f1_thread = threading.Thread(target=f1, args=(use_timeout_arg, f1_context_arg))
         f1_thread.start()
 
-        logger.debug('mainline about to wait 1')
-        msgs.get_msg('alpha')
+        logger.debug("mainline about to wait 1")
+        msgs.get_msg("alpha")
 
-        logger.debug('mainline about to request excl 1')
+        logger.debug("mainline about to request excl 1")
 
         stop_watch.start_clock(clock_iter=1)
         with pytest.raises(SELockObtainTimeout):
@@ -572,14 +644,14 @@ class TestSELock:
                 with SELockExcl(a_lock, timeout=timeout_arg):
                     pass
             else:
-                with SELockObtain(a_lock,
-                                  obtain_mode=SELockObtainMode.Exclusive,
-                                  timeout=timeout_arg):
+                with SELockObtain(
+                    a_lock, obtain_mode=SELockObtainMode.Exclusive, timeout=timeout_arg
+                ):
                     pass
 
         assert to_low <= stop_watch.duration() <= to_high
 
-        logger.debug('mainline about to request share 1')
+        logger.debug("mainline about to request share 1")
         stop_watch.start_clock(clock_iter=2)
         with pytest.raises(SELockObtainTimeout):
             if ml_context_arg == ContextArg.NoContext:
@@ -588,13 +660,13 @@ class TestSELock:
                 with SELockShare(a_lock, timeout=timeout_arg):
                     pass
             else:
-                with SELockObtain(a_lock,
-                                  obtain_mode=SELockObtainMode.Share,
-                                  timeout=timeout_arg):
+                with SELockObtain(
+                    a_lock, obtain_mode=SELockObtainMode.Share, timeout=timeout_arg
+                ):
                     pass
         assert to_low <= stop_watch.duration() <= to_high
 
-        logger.debug('mainline about to request excl 2')
+        logger.debug("mainline about to request excl 2")
         stop_watch.start_clock(clock_iter=3)
         with pytest.raises(SELockObtainTimeout):
             if ml_context_arg == ContextArg.NoContext:
@@ -603,13 +675,13 @@ class TestSELock:
                 with SELockExcl(a_lock, timeout=timeout_arg):
                     pass
             else:
-                with SELockObtain(a_lock,
-                                  obtain_mode=SELockObtainMode.Exclusive,
-                                  timeout=timeout_arg):
+                with SELockObtain(
+                    a_lock, obtain_mode=SELockObtainMode.Exclusive, timeout=timeout_arg
+                ):
                     pass
         assert to_low <= stop_watch.duration() <= to_high
 
-        logger.debug('mainline about to request share 2')
+        logger.debug("mainline about to request share 2")
         stop_watch.start_clock(clock_iter=4)
         with pytest.raises(SELockObtainTimeout):
             if ml_context_arg == ContextArg.NoContext:
@@ -618,18 +690,18 @@ class TestSELock:
                 with SELockShare(a_lock, timeout=timeout_arg):
                     pass
             else:
-                with SELockObtain(a_lock,
-                                  obtain_mode=SELockObtainMode.Share,
-                                  timeout=timeout_arg):
+                with SELockObtain(
+                    a_lock, obtain_mode=SELockObtainMode.Share, timeout=timeout_arg
+                ):
                     pass
         assert to_low <= stop_watch.duration() <= to_high
 
-        msgs.queue_msg('beta')
+        msgs.queue_msg("beta")
 
-        logger.debug('mainline about to wait 2')
-        msgs.get_msg('alpha')
+        logger.debug("mainline about to wait 2")
+        msgs.get_msg("alpha")
 
-        logger.debug('mainline about to request excl 3')
+        logger.debug("mainline about to request excl 3")
         stop_watch.start_clock(clock_iter=5)
         with pytest.raises(SELockObtainTimeout):
             if ml_context_arg == ContextArg.NoContext:
@@ -638,13 +710,13 @@ class TestSELock:
                 with SELockExcl(a_lock, timeout=timeout_arg):
                     pass
             else:
-                with SELockObtain(a_lock,
-                                  obtain_mode=SELockObtainMode.Exclusive,
-                                  timeout=timeout_arg):
+                with SELockObtain(
+                    a_lock, obtain_mode=SELockObtainMode.Exclusive, timeout=timeout_arg
+                ):
                     pass
         assert to_low <= stop_watch.duration() <= to_high
 
-        logger.debug('mainline about to request share 3')
+        logger.debug("mainline about to request share 3")
         if ml_context_arg == ContextArg.NoContext:
             a_lock.obtain_share(timeout=timeout_arg)
             a_lock.release()
@@ -652,12 +724,12 @@ class TestSELock:
             with SELockShare(a_lock, timeout=timeout_arg):
                 pass
         else:
-            with SELockObtain(a_lock,
-                              obtain_mode=SELockObtainMode.Share,
-                              timeout=timeout_arg):
+            with SELockObtain(
+                a_lock, obtain_mode=SELockObtainMode.Share, timeout=timeout_arg
+            ):
                 pass
 
-        logger.debug('mainline about to request excl 4')
+        logger.debug("mainline about to request excl 4")
         stop_watch.start_clock(clock_iter=6)
         with pytest.raises(SELockObtainTimeout):
             if ml_context_arg == ContextArg.NoContext:
@@ -666,13 +738,13 @@ class TestSELock:
                 with SELockExcl(a_lock, timeout=timeout_arg):
                     pass
             else:
-                with SELockObtain(a_lock,
-                                  obtain_mode=SELockObtainMode.Exclusive,
-                                  timeout=timeout_arg):
+                with SELockObtain(
+                    a_lock, obtain_mode=SELockObtainMode.Exclusive, timeout=timeout_arg
+                ):
                     pass
         assert to_low <= stop_watch.duration() <= to_high
 
-        logger.debug('mainline about to request share 4')
+        logger.debug("mainline about to request share 4")
         if ml_context_arg == ContextArg.NoContext:
             a_lock.obtain_share(timeout=timeout_arg)
             a_lock.release()
@@ -680,25 +752,27 @@ class TestSELock:
             with SELockShare(a_lock, timeout=timeout_arg):
                 pass
         else:
-            with SELockObtain(a_lock,
-                              obtain_mode=SELockObtainMode.Share,
-                              timeout=timeout_arg):
+            with SELockObtain(
+                a_lock, obtain_mode=SELockObtainMode.Share, timeout=timeout_arg
+            ):
                 pass
 
-        msgs.queue_msg('beta')
+        msgs.queue_msg("beta")
         f1_thread.join()
-        logger.debug('mainline exiting')
+        logger.debug("mainline exiting")
 
     ####################################################################
     # test_se_lock_combos
     ####################################################################
-    def test_se_lock_combos(self,
-                            num_share_requests1_arg: int,
-                            num_excl_requests1_arg: int,
-                            num_share_requests2_arg: int,
-                            num_excl_requests2_arg: int,
-                            release_position_arg: int,
-                            use_context_arg: int) -> None:
+    def test_se_lock_combos(
+        self,
+        num_share_requests1_arg: int,
+        num_excl_requests1_arg: int,
+        num_share_requests2_arg: int,
+        num_excl_requests2_arg: int,
+        release_position_arg: int,
+        use_context_arg: int,
+    ) -> None:
         """Method to test se_lock excl and share combos.
 
         The following section tests various scenarios of shared and
@@ -726,11 +800,13 @@ class TestSELock:
         """
         num_groups = 4
 
-        def f1(a_event: threading.Event,
-               mode: SELock._Mode,
-               req_num: int,
-               # use_context_tf: bool
-               use_context: ContextArg) -> None:
+        def f1(
+            a_event: threading.Event,
+            mode: SELock._Mode,
+            req_num: int,
+            # use_context_tf: bool
+            use_context: ContextArg,
+        ) -> None:
             """Function to get the lock and wait.
 
             Args:
@@ -741,6 +817,7 @@ class TestSELock:
                     lock obtain or to make the call directly
 
             """
+
             def f1_verify() -> None:
                 """Verify the thread item contains expected info."""
                 for f1_item in thread_event_list:
@@ -773,13 +850,11 @@ class TestSELock:
 
             else:
                 if mode == SELock._Mode.SHARE:
-                    with SELockObtain(a_lock,
-                                      obtain_mode=SELockObtainMode.Share):
+                    with SELockObtain(a_lock, obtain_mode=SELockObtainMode.Share):
                         f1_verify()
                         a_event.wait()
                 else:
-                    with SELockObtain(a_lock,
-                                      obtain_mode=SELockObtainMode.Exclusive):
+                    with SELockObtain(a_lock, obtain_mode=SELockObtainMode.Exclusive):
                         f1_verify()
                         a_event.wait()
 
@@ -796,10 +871,12 @@ class TestSELock:
         thread_event_list = []
 
         request_number = -1
-        num_requests_list = [num_share_requests1_arg,
-                             num_excl_requests1_arg,
-                             num_share_requests2_arg,
-                             num_excl_requests2_arg]
+        num_requests_list = [
+            num_share_requests1_arg,
+            num_excl_requests1_arg,
+            num_share_requests2_arg,
+            num_excl_requests2_arg,
+        ]
 
         num_initial_owners = 0
         initial_owner_mode: Optional[SELock._Mode] = None
@@ -846,29 +923,32 @@ class TestSELock:
                     else:
                         use_context = ContextArg.ContextObtain
 
-                a_thread = threading.Thread(target=f1,
-                                            args=(a_event1,
-                                                  req_mode,
-                                                  request_number,
-                                                  use_context))
+                a_thread = threading.Thread(
+                    target=f1, args=(a_event1, req_mode, request_number, use_context)
+                )
                 # save for verification and release
-                thread_event_list.append(ThreadEvent(thread=a_thread,
-                                                     event=a_event1,
-                                                     mode=req_mode,
-                                                     req_num=request_number,
-                                                     lock_obtained=False))
+                thread_event_list.append(
+                    ThreadEvent(
+                        thread=a_thread,
+                        event=a_event1,
+                        mode=req_mode,
+                        req_num=request_number,
+                        lock_obtained=False,
+                    )
+                )
 
                 a_thread.start()
 
                 # make sure the request has been queued
-                while ((not a_lock.owner_wait_q) or
-                       (not a_lock.owner_wait_q[-1].thread is a_thread)):
+                while (not a_lock.owner_wait_q) or (
+                    not a_lock.owner_wait_q[-1].thread is a_thread
+                ):
                     time.sleep(0.1)
                 # logger.debug(f'shr_excl = {shr_excl}, '
                 #              f'idx = {idx}, '
                 #              f'num_requests_made = {request_number}, '
                 #              f'len(a_lock) = {len(a_lock)}')
-                assert len(a_lock) == request_number+1
+                assert len(a_lock) == request_number + 1
 
                 # verify
                 assert a_lock.owner_wait_q[-1].thread is a_thread
@@ -936,7 +1016,7 @@ class TestSELock:
             elif work_excl2:
                 work_excl2 -= 1
 
-            assert len(a_lock) == request_number+1
+            assert len(a_lock) == request_number + 1
 
 
 ########################################################################
@@ -947,14 +1027,15 @@ class TestSELockDocstrings:
 
     def test_se_lock_with_example_1(self) -> None:
         """Method test_se_lock_with_example_1."""
-        flowers('Example of SELock for README:')
+        flowers("Example of SELock for README:")
 
         from scottbrian_locking.se_lock import SELock, SELockShare, SELockExcl
+
         a_lock = SELock()
         # Get lock in exclusive mode
         with SELockExcl(a_lock):  # write to a
             a = 1
-            print(f'under exclusive lock, a = {a}')
+            print(f"under exclusive lock, a = {a}")
         # Get lock in shared mode
         with SELockShare(a_lock):  # read a
-            print(f'under shared lock, a = {a}')
+            print(f"under shared lock, a = {a}")

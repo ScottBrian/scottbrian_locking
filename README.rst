@@ -59,6 +59,7 @@ Release History
 
 * 2.0.0
     * Add obtain_tf to context manager
+    * Add allow_recursive_obtain
     * delete setup.cfg
     * support python 3.12
     * drop support for python < 3.12
