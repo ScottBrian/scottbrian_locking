@@ -566,7 +566,7 @@ class TestSELock:
             obtaining_log_msg = (
                 f"f1 obtaining share {f1_context=} " f"{use_timeout_tf=}"
             )
-            obtained_log_msg = f"f1 obtained share {f1_context=} " f"{use_timeout_tf=}"
+            obtained_log_msg = f"f1 obtained share {f1_context=} {use_timeout_tf=}"
             if f1_context == ContextArg.NoContext:
                 if use_timeout_tf:
                     logger.debug(obtaining_log_msg)

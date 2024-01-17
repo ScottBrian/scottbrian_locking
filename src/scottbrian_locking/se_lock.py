@@ -169,6 +169,14 @@ class SELockObtainMode(Enum):
     Exclusive = auto()
 
 
+class LockItem(NamedTuple):
+    """NamedTuple for the lock items returned by get_queue_items."""
+
+    mode: SELockObtainMode
+    event_flag: bool
+    thread_name: str
+
+
 ########################################################################
 # SELock Class
 ########################################################################
@@ -754,6 +762,28 @@ class SELock:
                                 f"thread {item.thread}, "
                                 f"call sequence: {call_seq(latest=1, depth=2)}"
                             )
+
+    ####################################################################
+    # get_queue_items
+    ####################################################################
+    def get_queue_items(self) -> list[LockItem]:
+        """Return a list of the queue items.
+
+        Returns:
+            List of queue items.
+
+        """
+        with self.se_lock_lock:
+            return [
+                LockItem(
+                    mode=SELockObtainMode.Share
+                    if item.mode == SELock._Mode.SHARE
+                    else SELockObtainMode.Exclusive,
+                    event_flag=item.event.is_set(),
+                    thread_name=item.thread.name,
+                )
+                for item in self.owner_wait_q
+            ]
 
 
 ########################################################################
