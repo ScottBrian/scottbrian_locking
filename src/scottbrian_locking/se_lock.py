@@ -177,6 +177,14 @@ class LockItem(NamedTuple):
     thread_name: str
 
 
+class LockInfo(NamedTuple):
+    """NamedTuple for lock info returned by get_info"""
+
+    queue: list[LockItem]
+    owner_count: int
+    wait_count: int
+
+
 ########################################################################
 # SELock Class
 ########################################################################
@@ -764,9 +772,9 @@ class SELock:
                             )
 
     ####################################################################
-    # get_queue_items
+    # get_info
     ####################################################################
-    def get_queue_items(self) -> list[LockItem]:
+    def get_info(self) -> LockInfo:
         """Return a list of the queue items.
 
         Returns:
@@ -774,16 +782,20 @@ class SELock:
 
         """
         with self.se_lock_lock:
-            return [
-                LockItem(
-                    mode=SELockObtainMode.Share
-                    if item.mode == SELock._Mode.SHARE
-                    else SELockObtainMode.Exclusive,
-                    event_flag=item.event.is_set(),
-                    thread_name=item.thread.name,
-                )
-                for item in self.owner_wait_q
-            ]
+            return LockInfo(
+                queue=[
+                    LockItem(
+                        mode=SELockObtainMode.Share
+                        if item.mode == SELock._Mode.SHARE
+                        else SELockObtainMode.Exclusive,
+                        event_flag=item.event.is_set(),
+                        thread_name=item.thread.name,
+                    )
+                    for item in self.owner_wait_q
+                ],
+                owner_count=self.owner_count,
+                wait_count=self.excl_wait_count,
+            )
 
 
 ########################################################################

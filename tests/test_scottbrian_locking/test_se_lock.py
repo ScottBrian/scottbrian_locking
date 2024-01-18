@@ -73,42 +73,6 @@ class ContextArg(Enum):
 
 
 ########################################################################
-# context_arg
-########################################################################
-context_arg_list = [
-    ContextArg.NoContext,
-    ContextArg.ContextExclShare,
-    ContextArg.ContextObtain,
-]
-
-
-@pytest.fixture(params=context_arg_list)  # type: ignore
-def ml_context_arg(request: Any) -> ContextArg:
-    """Using different requests.
-
-    Args:
-        request: special fixture that returns the fixture params
-
-    Returns:
-        The params values are returned one at a time
-    """
-    return cast(ContextArg, request.param)
-
-
-@pytest.fixture(params=context_arg_list)  # type: ignore
-def f1_context_arg(request: Any) -> ContextArg:
-    """Using different requests.
-
-    Args:
-        request: special fixture that returns the fixture params
-
-    Returns:
-        The params values are returned one at a time
-    """
-    return cast(ContextArg, request.param)
-
-
-########################################################################
 # number_requests_arg fixture
 ########################################################################
 number_requests_arg_list = [0, 1, 2, 3]
@@ -221,44 +185,6 @@ def use_context2_arg(request: Any) -> int:
         The params values are returned one at a time
     """
     return cast(int, request.param)
-
-
-########################################################################
-# use_timeout_arg fixture
-########################################################################
-use_timeout_arg_list = [True, False]
-
-
-@pytest.fixture(params=use_timeout_arg_list)  # type: ignore
-def use_timeout_arg(request: Any) -> bool:
-    """Using timeout.
-
-    Args:
-        request: special fixture that returns the fixture params
-
-    Returns:
-        The params values are returned one at a time
-    """
-    return cast(bool, request.param)
-
-
-########################################################################
-# timeout_arg fixture
-########################################################################
-timeout_arg_list = [0.1, 0.5, 12]
-
-
-@pytest.fixture(params=timeout_arg_list)  # type: ignore
-def timeout_arg(request: Any) -> float:
-    """Using different timeout values.
-
-    Args:
-        request: special fixture that returns the fixture params
-
-    Returns:
-        The params values are returned one at a time
-    """
-    return cast(float, request.param)
 
 
 ########################################################################
@@ -425,49 +351,172 @@ class TestSELockBasic:
 
         self.log_test_msg("mainline entry")
 
+        thread_name = threading.current_thread().name
+
         a_se_lock = SELock()
 
         self.log_test_msg("about to do step 1")
         a_se_lock.obtain_excl()
+        lock_info = a_se_lock.get_info()
+        assert len(lock_info.queue) == 1
+        assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
+        assert lock_info.queue[0].thread_name == thread_name
+        assert not lock_info.queue[0].event_flag
+        assert lock_info.owner_count == -1
+        assert lock_info.wait_count == 0
 
         self.log_test_msg("about to do step 2")
         a_se_lock.release()
+        lock_info = a_se_lock.get_info()
+        assert len(lock_info.queue) == 0
+        assert lock_info.owner_count == 0
+        assert lock_info.wait_count == 0
 
         self.log_test_msg("about to do step 3")
         a_se_lock.obtain_excl_recursive()
+        lock_info = a_se_lock.get_info()
+        assert len(lock_info.queue) == 1
+        assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
+        assert lock_info.queue[0].thread_name == thread_name
+        assert not lock_info.queue[0].event_flag
+        assert lock_info.owner_count == -1
+        assert lock_info.wait_count == 0
 
         self.log_test_msg("about to do step 4")
         a_se_lock.release()
+        lock_info = a_se_lock.get_info()
+        assert len(lock_info.queue) == 0
+        assert lock_info.owner_count == 0
+        assert lock_info.wait_count == 0
 
         self.log_test_msg("about to do step 5")
         a_se_lock.obtain_excl()
+        lock_info = a_se_lock.get_info()
+        assert len(lock_info.queue) == 1
+        assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
+        assert lock_info.queue[0].thread_name == thread_name
+        assert not lock_info.queue[0].event_flag
+        assert lock_info.owner_count == -1
+        assert lock_info.wait_count == 0
 
         self.log_test_msg("about to do step 6")
         a_se_lock.obtain_excl_recursive()
+        lock_info = a_se_lock.get_info()
+        assert len(lock_info.queue) == 1
+        assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
+        assert lock_info.queue[0].thread_name == thread_name
+        assert not lock_info.queue[0].event_flag
+        assert lock_info.owner_count == -2
+        assert lock_info.wait_count == 0
 
         self.log_test_msg("about to do step 7")
         a_se_lock.release()
+        lock_info = a_se_lock.get_info()
+        assert len(lock_info.queue) == 1
+        assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
+        assert lock_info.queue[0].thread_name == thread_name
+        assert not lock_info.queue[0].event_flag
+        assert lock_info.owner_count == -1
+        assert lock_info.wait_count == 0
 
         self.log_test_msg("about to do step 8")
         a_se_lock.release()
+        lock_info = a_se_lock.get_info()
+        assert len(lock_info.queue) == 0
+        assert lock_info.owner_count == 0
+        assert lock_info.wait_count == 0
 
         self.log_test_msg("about to do step 9")
         a_se_lock.obtain_excl_recursive()
+        lock_info = a_se_lock.get_info()
+        assert len(lock_info.queue) == 1
+        assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
+        assert lock_info.queue[0].thread_name == thread_name
+        assert not lock_info.queue[0].event_flag
+        assert lock_info.owner_count == -1
+        assert lock_info.wait_count == 0
 
         self.log_test_msg("about to do step 10")
         a_se_lock.obtain_excl_recursive()
+        lock_info = a_se_lock.get_info()
+        assert len(lock_info.queue) == 1
+        assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
+        assert lock_info.queue[0].thread_name == thread_name
+        assert not lock_info.queue[0].event_flag
+        assert lock_info.owner_count == -2
+        assert lock_info.wait_count == 0
 
-        self.log_test_msg("about to do step 3")
+        self.log_test_msg("about to do step 11")
         a_se_lock.release()
+        lock_info = a_se_lock.get_info()
+        assert len(lock_info.queue) == 1
+        assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
+        assert lock_info.queue[0].thread_name == thread_name
+        assert not lock_info.queue[0].event_flag
+        assert lock_info.owner_count == -1
+        assert lock_info.wait_count == 0
 
-        self.log_test_msg("about to do step 3")
+        self.log_test_msg("about to do step 12")
         a_se_lock.release()
+        lock_info = a_se_lock.get_info()
+        assert len(lock_info.queue) == 0
+        assert lock_info.owner_count == 0
 
-        self.log_test_msg("about to do step 3")
+        self.log_test_msg("about to do step 13")
         a_se_lock.obtain_excl()
+        lock_info = a_se_lock.get_info()
+        assert len(lock_info.queue) == 1
+        assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
+        assert lock_info.queue[0].thread_name == thread_name
+        assert not lock_info.queue[0].event_flag
+        assert lock_info.owner_count == -1
+        assert lock_info.wait_count == 0
 
-        self.log_test_msg("about to do step 3")
+        self.log_test_msg("about to do step 14")
+        a_se_lock.obtain_excl_recursive()
+        lock_info = a_se_lock.get_info()
+        assert len(lock_info.queue) == 1
+        assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
+        assert lock_info.queue[0].thread_name == thread_name
+        assert not lock_info.queue[0].event_flag
+        assert lock_info.owner_count == -2
+        assert lock_info.wait_count == 0
+
+        self.log_test_msg("about to do step 15")
+        a_se_lock.obtain_excl_recursive()
+        lock_info = a_se_lock.get_info()
+        assert len(lock_info.queue) == 1
+        assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
+        assert lock_info.queue[0].thread_name == thread_name
+        assert not lock_info.queue[0].event_flag
+        assert lock_info.owner_count == -3
+        assert lock_info.wait_count == 0
+
+        self.log_test_msg("about to do step 16")
         a_se_lock.release()
+        lock_info = a_se_lock.get_info()
+        assert len(lock_info.queue) == 1
+        assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
+        assert lock_info.queue[0].thread_name == thread_name
+        assert not lock_info.queue[0].event_flag
+        assert lock_info.owner_count == -2
+        assert lock_info.wait_count == 0
+
+        self.log_test_msg("about to do step 17")
+        a_se_lock.release()
+        lock_info = a_se_lock.get_info()
+        assert len(lock_info.queue) == 1
+        assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
+        assert lock_info.queue[0].thread_name == thread_name
+        assert not lock_info.queue[0].event_flag
+        assert lock_info.owner_count == -1
+        assert lock_info.wait_count == 0
+
+        self.log_test_msg("about to do step 18")
+        a_se_lock.release()
+        lock_info = a_se_lock.get_info()
+        assert len(lock_info.queue) == 0
+        assert lock_info.owner_count == 0
 
         self.log_test_msg("mainline exit")
 
@@ -481,6 +530,30 @@ class TestSELock:
     ####################################################################
     # test_se_lock_timeout
     ####################################################################
+    @pytest.mark.parametrize(
+        "timeout_arg",
+        [0.1, 0.5, 12],
+    )
+    @pytest.mark.parametrize(
+        "use_timeout_arg",
+        [True, False],
+    )
+    @pytest.mark.parametrize(
+        "ml_context_arg",
+        [
+            ContextArg.NoContext,
+            ContextArg.ContextExclShare,
+            ContextArg.ContextObtain,
+        ],
+    )
+    @pytest.mark.parametrize(
+        "f1_context_arg",
+        [
+            ContextArg.NoContext,
+            ContextArg.ContextExclShare,
+            ContextArg.ContextObtain,
+        ],
+    )
     def test_se_lock_timeout(
         self,
         timeout_arg: float,
@@ -488,7 +561,7 @@ class TestSELock:
         ml_context_arg: ContextArg,
         f1_context_arg: ContextArg,
     ) -> None:
-        """Method to test se_lock without using context manager.
+        """Method to test se_lock timeout cases.
 
         Args:
             timeout_arg: number of seconds to use for timeout value
