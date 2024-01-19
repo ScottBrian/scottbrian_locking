@@ -21,7 +21,13 @@ import pytest
 ########################################################################
 # Local
 ########################################################################
-from scottbrian_locking.se_lock import SELock, SELockShare, SELockExcl, SELockObtain
+from scottbrian_locking.se_lock import (
+    SELock,
+    SELockShare,
+    SELockExcl,
+    SELockObtain,
+    LockItem,
+)
 from scottbrian_locking.se_lock import AttemptedReleaseByExclusiveWaiter
 from scottbrian_locking.se_lock import AttemptedReleaseBySharedWaiter
 from scottbrian_locking.se_lock import AttemptedReleaseOfUnownedLock
@@ -187,20 +193,23 @@ def use_context2_arg(request: Any) -> int:
     return cast(int, request.param)
 
 
-def verify_lock(
-    lock: SELock,
-    exp_q: list[tuple[SELockObtainMode, threading.Thread, bool]],
-    exp_owner_count: int,
-    exp_excl_wait_count: int,
-) -> None:
-    lock_info = lock.get_info()
-    assert len(lock_info.queue) == len(exp_q)
-    for idx, item in enumerate(lock_info.queue):
-        assert item.mode == exp_q[idx][0]
-        assert item.thread is exp_q[idx][1]
-        assert item.event_flag == exp_q[idx][2]
-    assert lock_info.owner_count == exp_owner_count
-    assert lock_info.excl_wait_count == exp_excl_wait_count
+########################################################################
+# verify_lock
+########################################################################
+# def verify_lock(
+#     lock: SELock,
+#     exp_q: list[tuple[SELockObtainMode, threading.Thread, bool]],
+#     exp_owner_count: int,
+#     exp_excl_wait_count: int,
+# ) -> None:
+#     lock_info = lock.get_info()
+#     assert len(lock_info.queue) == len(exp_q)
+#     for idx, item in enumerate(lock_info.queue):
+#         assert item.mode == exp_q[idx][0]
+#         assert item.thread is exp_q[idx][1]
+#         assert item.event_flag == exp_q[idx][2]
+#     assert lock_info.owner_count == exp_owner_count
+#     assert lock_info.excl_wait_count == exp_excl_wait_count
 
 
 ########################################################################
@@ -217,11 +226,14 @@ class TestSELockErrors:
         with pytest.raises(AttemptedReleaseOfUnownedLock):
             a_lock = SELock()
 
-            verify_lock(a_lock, exp_q=[], exp_owner_count=0, exp_excl_wait_count=0)
+            a_lock.verify_lock()
+
+            a_lock.verify_lock(exp_q=[], exp_owner_count=0, exp_excl_wait_count=0)
 
             a_lock.release()
 
-        verify_lock(a_lock, exp_q=[], exp_owner_count=0, exp_excl_wait_count=0)
+        a_lock.verify_lock()
+        a_lock.verify_lock(exp_q=[], exp_owner_count=0, exp_excl_wait_count=0)
 
     def test_se_lock_release_owner_not_alive(self) -> None:
         """Test owner become not alive while waiting for lock."""
@@ -232,20 +244,41 @@ class TestSELockErrors:
         def f1() -> None:
             """Function that obtains lock and end still holding it."""
             a_lock.obtain_excl()
-
-            verify_lock(
-                a_lock,
-                exp_q=[(SELockObtainMode.Exclusive, f1_thread, False)],
+            a_lock.verify_lock()
+            a_lock.verify_lock(
+                exp_q=[
+                    LockItem(
+                        mode=SELockObtainMode.Exclusive,
+                        event_flag=False,
+                        thread=f1_thread,
+                    ),
+                ],
                 exp_owner_count=-1,
                 exp_excl_wait_count=0,
             )
 
-        with pytest.raises(SELockOwnerNotAlive):
-            a_lock = SELock()
-            f1_thread = threading.Thread(target=f1)
-            f1_thread.start()
-            f1_thread.join()
+        a_lock = SELock()
+        a_lock.verify_lock()
+        a_lock.verify_lock(exp_q=[], exp_owner_count=0, exp_excl_wait_count=0)
 
+        f1_thread = threading.Thread(target=f1)
+        f1_thread.start()
+        f1_thread.join()
+
+        a_lock.verify_lock()
+        a_lock.verify_lock(
+            exp_q=[
+                LockItem(
+                    mode=SELockObtainMode.Exclusive,
+                    event_flag=False,
+                    thread=f1_thread,
+                ),
+            ],
+            exp_owner_count=-1,
+            exp_excl_wait_count=0,
+        )
+
+        with pytest.raises(SELockOwnerNotAlive):
             # f1 obtained the lock and exited
             a_lock.obtain_excl()
 
@@ -253,11 +286,19 @@ class TestSELockErrors:
         # needs and then must release the lock
         alpha_thread = threading.current_thread()
 
-        verify_lock(
-            a_lock,
+        a_lock.verify_lock()
+        a_lock.verify_lock(
             exp_q=[
-                (SELockObtainMode.Exclusive, f1_thread, False),
-                (SELockObtainMode.Exclusive, alpha_thread, False),
+                LockItem(
+                    mode=SELockObtainMode.Exclusive,
+                    event_flag=False,
+                    thread=f1_thread,
+                ),
+                LockItem(
+                    mode=SELockObtainMode.Exclusive,
+                    event_flag=False,
+                    thread=alpha_thread,
+                ),
             ],
             exp_owner_count=-1,
             exp_excl_wait_count=1,
@@ -291,16 +332,15 @@ class TestSELockErrors:
             # a_lock.obtain(mode=SELock._Mode.EXCL)
             a_lock.obtain_excl()
 
-            lock_info = a_lock.get_info()
-            assert len(lock_info.queue) == 2
-            assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-            assert lock_info.queue[0].thread is f2_thread
-            assert not lock_info.queue[0].event_flag
-            assert lock_info.queue[1].mode == SELockObtainMode.Exclusive
-            assert lock_info.queue[1].thread is f3_thread
-            assert lock_info.queue[1].event_flag
-            assert lock_info.owner_count == -1
-            assert lock_info.excl_wait_count == 1
+            verify_lock(
+                a_lock,
+                exp_q=[
+                    (SELockObtainMode.Exclusive, f2_thread, False),
+                    (SELockObtainMode.Exclusive, f3_thread, True),
+                ],
+                exp_owner_count=-1,
+                exp_excl_wait_count=1,
+            )
 
             a_event.set()
             a_event3.wait()
@@ -308,23 +348,24 @@ class TestSELockErrors:
             with pytest.raises(AttemptedReleaseByExclusiveWaiter):
                 a_lock.release()
 
-            lock_info = a_lock.get_info()
-            assert len(lock_info.queue) == 2
-            assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-            assert lock_info.queue[0].thread is f2_thread
-            assert not lock_info.queue[0].event_flag
-            assert lock_info.queue[1].mode == SELockObtainMode.Exclusive
-            assert lock_info.queue[1].thread is f3_thread
-            assert lock_info.queue[1].event_flag
-            assert lock_info.owner_count == -1
-            assert lock_info.excl_wait_count == 1
+            verify_lock(
+                a_lock,
+                exp_q=[
+                    (SELockObtainMode.Exclusive, f2_thread, False),
+                    (SELockObtainMode.Exclusive, f3_thread, True),
+                ],
+                exp_owner_count=-1,
+                exp_excl_wait_count=1,
+            )
 
         a_lock = SELock()
 
-        lock_info = a_lock.get_info()
-        assert len(lock_info.queue) == 0
-        assert lock_info.owner_count == 0
-        assert lock_info.excl_wait_count == 0
+        verify_lock(
+            a_lock,
+            exp_q=[],
+            exp_owner_count=0,
+            exp_excl_wait_count=0,
+        )
 
         a_event = threading.Event()
         a_event2 = threading.Event()
@@ -345,14 +386,15 @@ class TestSELockErrors:
         while True:
             lock_info = a_lock.get_info()
             if len(lock_info.queue) == 2:
-                assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-                assert lock_info.queue[0].thread is f2_thread
-                assert not lock_info.queue[0].event_flag
-                assert lock_info.queue[1].mode == SELockObtainMode.Exclusive
-                assert lock_info.queue[1].thread is f3_thread
-                assert not lock_info.queue[1].event_flag
-                assert lock_info.owner_count == -1
-                assert lock_info.excl_wait_count == 1
+                verify_lock(
+                    a_lock,
+                    exp_q=[
+                        (SELockObtainMode.Exclusive, f2_thread, False),
+                        (SELockObtainMode.Exclusive, f3_thread, False),
+                    ],
+                    exp_owner_count=-1,
+                    exp_excl_wait_count=1,
+                )
                 break
             time.sleep(0.01)
 
@@ -362,16 +404,15 @@ class TestSELockErrors:
         a_event.wait()
         a_event.clear()
 
-        lock_info = a_lock.get_info()
-        assert len(lock_info.queue) == 2
-        assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread is f2_thread
-        assert not lock_info.queue[0].event_flag
-        assert lock_info.queue[1].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[1].thread is f3_thread
-        assert lock_info.queue[1].event_flag
-        assert lock_info.owner_count == -1
-        assert lock_info.excl_wait_count == 1
+        verify_lock(
+            a_lock,
+            exp_q=[
+                (SELockObtainMode.Exclusive, f2_thread, False),
+                (SELockObtainMode.Exclusive, f3_thread, True),
+            ],
+            exp_owner_count=-1,
+            exp_excl_wait_count=1,
+        )
 
         # tell f2 and f3 to end - we will leave the lock damaged
         a_event2.set()
@@ -380,16 +421,15 @@ class TestSELockErrors:
         f2_thread.join()
         f3_thread.join()
 
-        lock_info = a_lock.get_info()
-        assert len(lock_info.queue) == 2
-        assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread is f2_thread
-        assert not lock_info.queue[0].event_flag
-        assert lock_info.queue[1].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[1].thread is f3_thread
-        assert lock_info.queue[1].event_flag
-        assert lock_info.owner_count == -1
-        assert lock_info.excl_wait_count == 1
+        verify_lock(
+            a_lock,
+            exp_q=[
+                (SELockObtainMode.Exclusive, f2_thread, False),
+                (SELockObtainMode.Exclusive, f3_thread, True),
+            ],
+            exp_owner_count=-1,
+            exp_excl_wait_count=1,
+        )
 
     def test_se_lock_release_by_shared_waiter(self) -> None:
         """Test release by shared waiter."""
@@ -401,6 +441,16 @@ class TestSELockErrors:
             """Function that gets lock exclusive to cause contention."""
             # a_lock.obtain(mode=SELock._Mode.EXCL)
             a_lock.obtain_excl()
+
+            verify_lock(
+                a_lock,
+                exp_q=[
+                    (SELockObtainMode.Exclusive, f4_thread, False),
+                ],
+                exp_owner_count=-1,
+                exp_excl_wait_count=0,
+            )
+
             a_event.set()
             a_event2.wait()
 
@@ -408,23 +458,76 @@ class TestSELockErrors:
             """Function that tries to release lock while waiting."""
             # a_lock.obtain(mode=SELock._Mode.SHARE)
             a_lock.obtain_share()
+
+            verify_lock(
+                a_lock,
+                exp_q=[
+                    (SELockObtainMode.Exclusive, f2_thread, False),
+                    (SELockObtainMode.Exclusive, f3_thread, True),
+                ],
+                exp_owner_count=-1,
+                exp_excl_wait_count=1,
+            )
+
             with pytest.raises(AttemptedReleaseBySharedWaiter):
                 a_lock.release()
 
+            verify_lock(
+                a_lock,
+                exp_q=[
+                    (SELockObtainMode.Exclusive, f2_thread, False),
+                    (SELockObtainMode.Exclusive, f3_thread, True),
+                ],
+                exp_owner_count=-1,
+                exp_excl_wait_count=1,
+            )
+
         a_lock = SELock()
+
+        verify_lock(
+            a_lock,
+            exp_q=[],
+            exp_owner_count=0,
+            exp_excl_wait_count=0,
+        )
+
         a_event = threading.Event()
         a_event2 = threading.Event()
         f4_thread = threading.Thread(target=f4)
         f5_thread = threading.Thread(target=f5)
 
-        # start f2 to get the lock exclusive
+        # start f4 to get the lock exclusive
         f4_thread.start()
 
-        # wait for f2 to tell us it has the lock
+        # wait for f4 to tell us it has the lock
         a_event.wait()
 
-        # start f3 to queue up for the lock behind f1
+        verify_lock(
+            a_lock,
+            exp_q=[
+                (SELockObtainMode.Exclusive, f4_thread, False),
+            ],
+            exp_owner_count=-1,
+            exp_excl_wait_count=0,
+        )
+
+        # start f5 to queue up for the lock behind f4
         f5_thread.start()
+
+        while True:
+            lock_info = a_lock.get_info()
+            if len(lock_info.queue) == 2:
+                verify_lock(
+                    a_lock,
+                    exp_q=[
+                        (SELockObtainMode.Exclusive, f2_thread, False),
+                        (SELockObtainMode.Exclusive, f3_thread, False),
+                    ],
+                    exp_owner_count=-1,
+                    exp_excl_wait_count=1,
+                )
+                break
+            time.sleep(0.01)
 
         # post (prematurely) the event in the SELock for f5
         a_lock.owner_wait_q[1].event.set()
@@ -434,6 +537,16 @@ class TestSELockErrors:
 
         f4_thread.join()
         f5_thread.join()
+
+        verify_lock(
+            a_lock,
+            exp_q=[
+                (SELockObtainMode.Exclusive, f2_thread, False),
+                (SELockObtainMode.Exclusive, f3_thread, True),
+            ],
+            exp_owner_count=-1,
+            exp_excl_wait_count=1,
+        )
 
 
 ########################################################################

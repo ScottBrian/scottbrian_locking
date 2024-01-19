@@ -150,6 +150,18 @@ class AttemptedReleaseOfUnownedLock(SELockError):
     pass
 
 
+class LockVerifyError(SELockError):
+    """SELock exception for lock failed verify_lock request."""
+
+    pass
+
+
+class LockVerifyTimeout(SELockError):
+    """SELock exception for timeout during verify_lock request."""
+
+    pass
+
+
 class SELockObtainTimeout(SELockError):
     """SELock exception for timeout on obtain request."""
 
@@ -162,6 +174,9 @@ class SELockOwnerNotAlive(SELockError):
     pass
 
 
+########################################################################
+# SELockObtainMode
+########################################################################
 class SELockObtainMode(Enum):
     """Enum for SELockObtain to specify shared or exclusive control."""
 
@@ -797,6 +812,119 @@ class SELock:
                 owner_count=self.owner_count,
                 excl_wait_count=self.excl_wait_count,
             )
+
+    ####################################################################
+    # verify_lock
+    ####################################################################
+    def verify_lock(
+        self,
+        exp_q: Optional[list[LockItem]] = None,
+        exp_owner_count: Optional[int] = None,
+        exp_excl_wait_count: Optional[int] = None,
+        timeout: OptIntFloat = None,
+    ) -> None:
+        """Verifies that the lock is in the specified state.
+
+        Args:
+            exp_q: list of LockItem objects that specify the expected
+                owners and/or waiters of the lock. If not specified,
+                the lock will be do a minimal verification to ensure
+                the counts are reasonable.
+            exp_owner_count: specifies the expected owner count
+            exp_excl_wait_count: specifies the expected exclusive wait
+                count
+            timeout: if specifies, specifies the time allowed for the
+                lock to be in the specified state. If not specified, the
+                lock must already be in the specified state at entry.
+        Raises:
+            LockVerifyError: the lock failed to verify, or failed to
+                reach the expected state within the time specified for
+                *timeout*.
+
+        """
+        lock_info = self.get_info()
+        if exp_q is None:
+            calc_owner_count = 0
+            calc_excl_wait_count = 0
+            idx_of_first_excl_wait = -1
+            idx_of_first_excl_event_flag = -1
+            idx_of_first_share_event_flag = -1
+            idx_of_first_share_wait = -1
+            for idx, lock_item in enumerate(lock_info.queue):
+                if lock_item.mode == SELockObtainMode.Exclusive:
+                    if idx == 0:
+                        calc_owner_count = -1
+                    else:
+                        if idx_of_first_excl_wait == -1:
+                            idx_of_first_excl_wait = idx
+                        calc_excl_wait_count += 1
+                        if lock_item.event_flag and idx_of_first_excl_event_flag == -1:
+                            idx_of_first_excl_event_flag = idx
+                else:
+                    if idx == 0:
+                        calc_owner_count = 1
+                    else:
+                        if calc_owner_count > 0:
+                            if idx_of_first_excl_wait == -1:
+                                calc_owner_count += 1
+                            else:
+                                if idx_of_first_share_wait == -1:
+                                    idx_of_first_share_wait = idx
+                    if lock_item.event_flag and idx_of_first_share_event_flag == -1:
+                        idx_of_first_share_event_flag = idx
+
+            owner_count_error = not (
+                (lock_info.owner_count <= calc_owner_count == -1)
+                or (0 <= lock_info.owner_count == calc_owner_count)
+            )
+            wait_count_error = lock_info.excl_wait_count != calc_excl_wait_count
+            excl_event_flag_error = idx_of_first_excl_event_flag > 0
+            share_event_flag_error = (
+                idx_of_first_excl_wait < idx_of_first_share_event_flag
+            )
+
+            if (
+                owner_count_error
+                or wait_count_error
+                or excl_event_flag_error
+                or share_event_flag_error
+            ):
+                error_msg = (
+                    f"lock_verify raising LockVerifyError. {exp_q=} , "
+                    f"{lock_info.queue=}, {exp_owner_count=}, "
+                    f"{lock_info.owner_count=}, {exp_excl_wait_count=}, "
+                    f"{lock_info.excl_wait_count=}, {timeout=}, "
+                    f"{calc_owner_count=}, {calc_excl_wait_count=}, "
+                    f"{idx_of_first_excl_wait=}, {idx_of_first_excl_event_flag=}, "
+                    f"{idx_of_first_share_wait=}, {idx_of_first_share_event_flag=}"
+                )
+                self.logger.debug(error_msg)
+                raise LockVerifyError(error_msg)
+
+        else:
+            timer = Timer(timeout=timeout)
+            while True:
+                if (
+                    exp_q == lock_info.queue
+                    and (
+                        exp_owner_count is None
+                        or exp_owner_count == lock_info.owner_count
+                    )
+                    and (
+                        exp_excl_wait_count is None
+                        or exp_excl_wait_count == lock_info.excl_wait_count
+                    )
+                ):
+                    return
+                if timeout is None or timer.is_expired():
+                    error_msg = (
+                        f"lock_verify raising LockVerifyError. {exp_q=} , "
+                        f"{lock_info.queue=}, {exp_owner_count=}, "
+                        f"{lock_info.owner_count=}, {exp_excl_wait_count=}, "
+                        f"{lock_info.excl_wait_count=}, {timeout=}"
+                    )
+                    self.logger.debug(error_msg)
+                    raise LockVerifyError(error_msg)
 
 
 ########################################################################
