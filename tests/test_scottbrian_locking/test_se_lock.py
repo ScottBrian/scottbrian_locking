@@ -187,6 +187,22 @@ def use_context2_arg(request: Any) -> int:
     return cast(int, request.param)
 
 
+def verify_lock(
+    lock: SELock,
+    exp_q: list[tuple[SELockObtainMode, threading.Thread, bool]],
+    exp_owner_count: int,
+    exp_excl_wait_count: int,
+) -> None:
+    lock_info = lock.get_info()
+    assert len(lock_info.queue) == len(exp_q)
+    for idx, item in enumerate(lock_info.queue):
+        assert item.mode == exp_q[idx][0]
+        assert item.thread is exp_q[idx][1]
+        assert item.event_flag == exp_q[idx][2]
+    assert lock_info.owner_count == exp_owner_count
+    assert lock_info.excl_wait_count == exp_excl_wait_count
+
+
 ########################################################################
 # TestSELockBasic class to test SELock methods
 ########################################################################
@@ -200,7 +216,12 @@ class TestSELockErrors:
         ################################################################
         with pytest.raises(AttemptedReleaseOfUnownedLock):
             a_lock = SELock()
+
+            verify_lock(a_lock, exp_q=[], exp_owner_count=0, exp_excl_wait_count=0)
+
             a_lock.release()
+
+        verify_lock(a_lock, exp_q=[], exp_owner_count=0, exp_excl_wait_count=0)
 
     def test_se_lock_release_owner_not_alive(self) -> None:
         """Test owner become not alive while waiting for lock."""
@@ -210,8 +231,14 @@ class TestSELockErrors:
         ################################################################
         def f1() -> None:
             """Function that obtains lock and end still holding it."""
-            # a_lock.obtain(mode=SELock._Mode.EXCL)
             a_lock.obtain_excl()
+
+            verify_lock(
+                a_lock,
+                exp_q=[(SELockObtainMode.Exclusive, f1_thread, False)],
+                exp_owner_count=-1,
+                exp_excl_wait_count=0,
+            )
 
         with pytest.raises(SELockOwnerNotAlive):
             a_lock = SELock()
@@ -220,10 +247,21 @@ class TestSELockErrors:
             f1_thread.join()
 
             # f1 obtained the lock and exited
-            # a_lock.obtain(mode=SELock._Mode.EXCL)
             a_lock.obtain_excl()
 
-        f1_thread.join()
+        # the application is responsible for doing whatever recovery it
+        # needs and then must release the lock
+        alpha_thread = threading.current_thread()
+
+        verify_lock(
+            a_lock,
+            exp_q=[
+                (SELockObtainMode.Exclusive, f1_thread, False),
+                (SELockObtainMode.Exclusive, alpha_thread, False),
+            ],
+            exp_owner_count=-1,
+            exp_excl_wait_count=1,
+        )
 
     def test_se_lock_release_by_exclusive_waiter(self) -> None:
         """Test release by exclusive waiter."""
@@ -235,6 +273,16 @@ class TestSELockErrors:
             """Function that gets lock exclusive to cause contention."""
             # a_lock.obtain(mode=SELock._Mode.EXCL)
             a_lock.obtain_excl()
+
+            verify_lock(
+                a_lock,
+                exp_q=[
+                    (SELockObtainMode.Exclusive, f2_thread, False),
+                ],
+                exp_owner_count=-1,
+                exp_excl_wait_count=0,
+            )
+
             a_event.set()
             a_event2.wait()
 
@@ -242,12 +290,45 @@ class TestSELockErrors:
             """Function that tries to release lock while waiting."""
             # a_lock.obtain(mode=SELock._Mode.EXCL)
             a_lock.obtain_excl()
+
+            lock_info = a_lock.get_info()
+            assert len(lock_info.queue) == 2
+            assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
+            assert lock_info.queue[0].thread is f2_thread
+            assert not lock_info.queue[0].event_flag
+            assert lock_info.queue[1].mode == SELockObtainMode.Exclusive
+            assert lock_info.queue[1].thread is f3_thread
+            assert lock_info.queue[1].event_flag
+            assert lock_info.owner_count == -1
+            assert lock_info.excl_wait_count == 1
+
+            a_event.set()
+            a_event3.wait()
+
             with pytest.raises(AttemptedReleaseByExclusiveWaiter):
                 a_lock.release()
 
+            lock_info = a_lock.get_info()
+            assert len(lock_info.queue) == 2
+            assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
+            assert lock_info.queue[0].thread is f2_thread
+            assert not lock_info.queue[0].event_flag
+            assert lock_info.queue[1].mode == SELockObtainMode.Exclusive
+            assert lock_info.queue[1].thread is f3_thread
+            assert lock_info.queue[1].event_flag
+            assert lock_info.owner_count == -1
+            assert lock_info.excl_wait_count == 1
+
         a_lock = SELock()
+
+        lock_info = a_lock.get_info()
+        assert len(lock_info.queue) == 0
+        assert lock_info.owner_count == 0
+        assert lock_info.excl_wait_count == 0
+
         a_event = threading.Event()
         a_event2 = threading.Event()
+        a_event3 = threading.Event()
         f2_thread = threading.Thread(target=f2)
         f3_thread = threading.Thread(target=f3)
 
@@ -256,18 +337,59 @@ class TestSELockErrors:
 
         # wait for f2 to tell us it has the lock
         a_event.wait()
+        a_event.clear()
 
         # start f3 to queue up for the lock behind f2
         f3_thread.start()
 
+        while True:
+            lock_info = a_lock.get_info()
+            if len(lock_info.queue) == 2:
+                assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
+                assert lock_info.queue[0].thread is f2_thread
+                assert not lock_info.queue[0].event_flag
+                assert lock_info.queue[1].mode == SELockObtainMode.Exclusive
+                assert lock_info.queue[1].thread is f3_thread
+                assert not lock_info.queue[1].event_flag
+                assert lock_info.owner_count == -1
+                assert lock_info.excl_wait_count == 1
+                break
+            time.sleep(0.01)
+
         # post (prematurely) the event in the SELock for f3
         a_lock.owner_wait_q[1].event.set()
 
-        # tell f2 to end - we will leave the lock damaged
+        a_event.wait()
+        a_event.clear()
+
+        lock_info = a_lock.get_info()
+        assert len(lock_info.queue) == 2
+        assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
+        assert lock_info.queue[0].thread is f2_thread
+        assert not lock_info.queue[0].event_flag
+        assert lock_info.queue[1].mode == SELockObtainMode.Exclusive
+        assert lock_info.queue[1].thread is f3_thread
+        assert lock_info.queue[1].event_flag
+        assert lock_info.owner_count == -1
+        assert lock_info.excl_wait_count == 1
+
+        # tell f2 and f3 to end - we will leave the lock damaged
         a_event2.set()
+        a_event3.set()
 
         f2_thread.join()
         f3_thread.join()
+
+        lock_info = a_lock.get_info()
+        assert len(lock_info.queue) == 2
+        assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
+        assert lock_info.queue[0].thread is f2_thread
+        assert not lock_info.queue[0].event_flag
+        assert lock_info.queue[1].mode == SELockObtainMode.Exclusive
+        assert lock_info.queue[1].thread is f3_thread
+        assert lock_info.queue[1].event_flag
+        assert lock_info.owner_count == -1
+        assert lock_info.excl_wait_count == 1
 
     def test_se_lock_release_by_shared_waiter(self) -> None:
         """Test release by shared waiter."""
@@ -360,101 +482,101 @@ class TestSELockBasic:
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 1
         assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread_name == thread_name
+        assert lock_info.queue[0].thread == thread_name
         assert not lock_info.queue[0].event_flag
         assert lock_info.owner_count == -1
-        assert lock_info.wait_count == 0
+        assert lock_info.excl_wait_count == 0
 
         self.log_test_msg("about to do step 2")
         a_se_lock.release()
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 0
         assert lock_info.owner_count == 0
-        assert lock_info.wait_count == 0
+        assert lock_info.excl_wait_count == 0
 
         self.log_test_msg("about to do step 3")
         a_se_lock.obtain_excl_recursive()
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 1
         assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread_name == thread_name
+        assert lock_info.queue[0].thread == thread_name
         assert not lock_info.queue[0].event_flag
         assert lock_info.owner_count == -1
-        assert lock_info.wait_count == 0
+        assert lock_info.excl_wait_count == 0
 
         self.log_test_msg("about to do step 4")
         a_se_lock.release()
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 0
         assert lock_info.owner_count == 0
-        assert lock_info.wait_count == 0
+        assert lock_info.excl_wait_count == 0
 
         self.log_test_msg("about to do step 5")
         a_se_lock.obtain_excl()
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 1
         assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread_name == thread_name
+        assert lock_info.queue[0].thread == thread_name
         assert not lock_info.queue[0].event_flag
         assert lock_info.owner_count == -1
-        assert lock_info.wait_count == 0
+        assert lock_info.excl_wait_count == 0
 
         self.log_test_msg("about to do step 6")
         a_se_lock.obtain_excl_recursive()
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 1
         assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread_name == thread_name
+        assert lock_info.queue[0].thread == thread_name
         assert not lock_info.queue[0].event_flag
         assert lock_info.owner_count == -2
-        assert lock_info.wait_count == 0
+        assert lock_info.excl_wait_count == 0
 
         self.log_test_msg("about to do step 7")
         a_se_lock.release()
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 1
         assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread_name == thread_name
+        assert lock_info.queue[0].thread == thread_name
         assert not lock_info.queue[0].event_flag
         assert lock_info.owner_count == -1
-        assert lock_info.wait_count == 0
+        assert lock_info.excl_wait_count == 0
 
         self.log_test_msg("about to do step 8")
         a_se_lock.release()
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 0
         assert lock_info.owner_count == 0
-        assert lock_info.wait_count == 0
+        assert lock_info.excl_wait_count == 0
 
         self.log_test_msg("about to do step 9")
         a_se_lock.obtain_excl_recursive()
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 1
         assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread_name == thread_name
+        assert lock_info.queue[0].thread == thread_name
         assert not lock_info.queue[0].event_flag
         assert lock_info.owner_count == -1
-        assert lock_info.wait_count == 0
+        assert lock_info.excl_wait_count == 0
 
         self.log_test_msg("about to do step 10")
         a_se_lock.obtain_excl_recursive()
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 1
         assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread_name == thread_name
+        assert lock_info.queue[0].thread == thread_name
         assert not lock_info.queue[0].event_flag
         assert lock_info.owner_count == -2
-        assert lock_info.wait_count == 0
+        assert lock_info.excl_wait_count == 0
 
         self.log_test_msg("about to do step 11")
         a_se_lock.release()
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 1
         assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread_name == thread_name
+        assert lock_info.queue[0].thread == thread_name
         assert not lock_info.queue[0].event_flag
         assert lock_info.owner_count == -1
-        assert lock_info.wait_count == 0
+        assert lock_info.excl_wait_count == 0
 
         self.log_test_msg("about to do step 12")
         a_se_lock.release()
@@ -467,50 +589,50 @@ class TestSELockBasic:
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 1
         assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread_name == thread_name
+        assert lock_info.queue[0].thread == thread_name
         assert not lock_info.queue[0].event_flag
         assert lock_info.owner_count == -1
-        assert lock_info.wait_count == 0
+        assert lock_info.excl_wait_count == 0
 
         self.log_test_msg("about to do step 14")
         a_se_lock.obtain_excl_recursive()
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 1
         assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread_name == thread_name
+        assert lock_info.queue[0].thread == thread_name
         assert not lock_info.queue[0].event_flag
         assert lock_info.owner_count == -2
-        assert lock_info.wait_count == 0
+        assert lock_info.excl_wait_count == 0
 
         self.log_test_msg("about to do step 15")
         a_se_lock.obtain_excl_recursive()
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 1
         assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread_name == thread_name
+        assert lock_info.queue[0].thread == thread_name
         assert not lock_info.queue[0].event_flag
         assert lock_info.owner_count == -3
-        assert lock_info.wait_count == 0
+        assert lock_info.excl_wait_count == 0
 
         self.log_test_msg("about to do step 16")
         a_se_lock.release()
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 1
         assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread_name == thread_name
+        assert lock_info.queue[0].thread == thread_name
         assert not lock_info.queue[0].event_flag
         assert lock_info.owner_count == -2
-        assert lock_info.wait_count == 0
+        assert lock_info.excl_wait_count == 0
 
         self.log_test_msg("about to do step 17")
         a_se_lock.release()
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 1
         assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread_name == thread_name
+        assert lock_info.queue[0].thread == thread_name
         assert not lock_info.queue[0].event_flag
         assert lock_info.owner_count == -1
-        assert lock_info.wait_count == 0
+        assert lock_info.excl_wait_count == 0
 
         self.log_test_msg("about to do step 18")
         a_se_lock.release()

@@ -174,7 +174,7 @@ class LockItem(NamedTuple):
 
     mode: SELockObtainMode
     event_flag: bool
-    thread_name: str
+    thread: str
 
 
 class LockInfo(NamedTuple):
@@ -182,7 +182,7 @@ class LockInfo(NamedTuple):
 
     queue: list[LockItem]
     owner_count: int
-    wait_count: int
+    excl_wait_count: int
 
 
 ########################################################################
@@ -532,6 +532,11 @@ class SELock:
 
             # we have waited long enough, check if owner still alive
             with self.se_lock_lock:
+                # we need to check the wait_event again under the lock
+                # to make sure we did not just now get the lock
+                if wait_event.is_set():
+                    return
+
                 # We may have timed out by now if the caller specified a
                 # timeout value, but we give priority to the owner
                 # having become not alive and raise that error here
@@ -702,10 +707,6 @@ class SELock:
             else:
                 self.owner_count -= 1
             del self.owner_wait_q[owner_waiter_desc.item_idx]
-            # if owner_waiter_desc.item_mode == SELock._Mode.EXCL:
-            #     self.owner_count = 0
-            # else:
-            #     self.owner_count -= 1
 
             if self.debug_logging_enabled:
                 self.logger.debug(
@@ -789,12 +790,12 @@ class SELock:
                         if item.mode == SELock._Mode.SHARE
                         else SELockObtainMode.Exclusive,
                         event_flag=item.event.is_set(),
-                        thread_name=item.thread.name,
+                        thread=item.thread,
                     )
                     for item in self.owner_wait_q
                 ],
                 owner_count=self.owner_count,
-                wait_count=self.excl_wait_count,
+                excl_wait_count=self.excl_wait_count,
             )
 
 
