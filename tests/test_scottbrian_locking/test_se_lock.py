@@ -32,6 +32,7 @@ from scottbrian_locking.se_lock import (
     AttemptedReleaseByExclusiveWaiter,
     AttemptedReleaseBySharedWaiter,
     AttemptedReleaseOfUnownedLock,
+    LockVerifyError,
     SELockInputError,
     SELockObtainTimeout,
     SELockOwnerNotAlive,
@@ -476,10 +477,13 @@ class TestSELockErrors:
             # a_lock.obtain(mode=SELock._Mode.EXCL)
             a_lock.obtain_excl()
 
-            verify_lock(
-                a_lock,
+            a_lock.verify_lock(
                 exp_q=[
-                    (SELockObtainMode.Exclusive, f2_thread, False),
+                    LockItem(
+                        mode=SELockObtainMode.Exclusive,
+                        event_flag=False,
+                        thread=f2_thread,
+                    ),
                 ],
                 exp_owner_count=-1,
                 exp_excl_wait_count=0,
@@ -493,12 +497,20 @@ class TestSELockErrors:
             # a_lock.obtain(mode=SELock._Mode.EXCL)
             a_lock.obtain_excl()
 
-            verify_lock(
-                a_lock,
-                exp_q=[
-                    (SELockObtainMode.Exclusive, f2_thread, False),
-                    (SELockObtainMode.Exclusive, f3_thread, True),
-                ],
+            f3_exp_q = [
+                LockItem(
+                    mode=SELockObtainMode.Exclusive,
+                    event_flag=False,
+                    thread=f2_thread,
+                ),
+                LockItem(
+                    mode=SELockObtainMode.Exclusive,
+                    event_flag=True,
+                    thread=f3_thread,
+                ),
+            ]
+            a_lock.verify_lock(
+                exp_q=f3_exp_q,
                 exp_owner_count=-1,
                 exp_excl_wait_count=1,
             )
@@ -509,20 +521,28 @@ class TestSELockErrors:
             with pytest.raises(AttemptedReleaseByExclusiveWaiter):
                 a_lock.release()
 
-            verify_lock(
-                a_lock,
-                exp_q=[
-                    (SELockObtainMode.Exclusive, f2_thread, False),
-                    (SELockObtainMode.Exclusive, f3_thread, True),
-                ],
+            a_lock.verify_lock(
+                exp_q=f3_exp_q,
                 exp_owner_count=-1,
                 exp_excl_wait_count=1,
+                verify_structures=False,
             )
+
+            f3_error_msg = (
+                f"lock_verify raising LockVerifyError. exp_q=None, "
+                f"lock_info.queue={f3_exp_q}, exp_owner_count=None, "
+                f"lock_info.owner_count=-1, exp_excl_wait_count=None, "
+                f"lock_info.excl_wait_count=1, timeout=None, "
+                f"calc_owner_count=-1, calc_excl_wait_count=1, "
+                f"idx_of_first_excl_wait=1, idx_of_first_excl_event_flag=1, "
+                f"idx_of_first_share_wait=-1, idx_of_first_share_event_flag=-1."
+            )
+            with pytest.raises(LockVerifyError, match=f3_error_msg):
+                a_lock.verify_lock()
 
         a_lock = SELock()
 
-        verify_lock(
-            a_lock,
+        a_lock.verify_lock(
             exp_q=[],
             exp_owner_count=0,
             exp_excl_wait_count=0,
@@ -544,20 +564,23 @@ class TestSELockErrors:
         # start f3 to queue up for the lock behind f2
         f3_thread.start()
 
-        while True:
-            lock_info = a_lock.get_info()
-            if len(lock_info.queue) == 2:
-                verify_lock(
-                    a_lock,
-                    exp_q=[
-                        (SELockObtainMode.Exclusive, f2_thread, False),
-                        (SELockObtainMode.Exclusive, f3_thread, False),
-                    ],
-                    exp_owner_count=-1,
-                    exp_excl_wait_count=1,
-                )
-                break
-            time.sleep(0.01)
+        a_lock.verify_lock(
+            exp_q=[
+                LockItem(
+                    mode=SELockObtainMode.Exclusive,
+                    event_flag=False,
+                    thread=f2_thread,
+                ),
+                LockItem(
+                    mode=SELockObtainMode.Exclusive,
+                    event_flag=False,
+                    thread=f3_thread,
+                ),
+            ],
+            exp_owner_count=-1,
+            exp_excl_wait_count=1,
+            timeout=10,
+        )
 
         # post (prematurely) the event in the SELock for f3
         a_lock.owner_wait_q[1].event.set()
@@ -565,15 +588,37 @@ class TestSELockErrors:
         a_event.wait()
         a_event.clear()
 
-        verify_lock(
-            a_lock,
-            exp_q=[
-                (SELockObtainMode.Exclusive, f2_thread, False),
-                (SELockObtainMode.Exclusive, f3_thread, True),
-            ],
+        exp_q = [
+            LockItem(
+                mode=SELockObtainMode.Exclusive,
+                event_flag=False,
+                thread=f2_thread,
+            ),
+            LockItem(
+                mode=SELockObtainMode.Exclusive,
+                event_flag=True,
+                thread=f3_thread,
+            ),
+        ]
+
+        a_lock.verify_lock(
+            exp_q=exp_q,
             exp_owner_count=-1,
             exp_excl_wait_count=1,
+            verify_structures=False,
         )
+
+        error_msg = (
+            f"lock_verify raising LockVerifyError. exp_q=None, "
+            f"lock_info.queue={exp_q}, exp_owner_count=None, "
+            f"lock_info.owner_count=-1, exp_excl_wait_count=None, "
+            f"lock_info.excl_wait_count=1, timeout=None, "
+            f"calc_owner_count=-1, calc_excl_wait_count=1, "
+            f"idx_of_first_excl_wait=1, idx_of_first_excl_event_flag=1, "
+            f"idx_of_first_share_wait=-1, idx_of_first_share_event_flag=-1."
+        )
+        with pytest.raises(LockVerifyError, match=error_msg):
+            a_lock.verify_lock()
 
         # tell f2 and f3 to end - we will leave the lock damaged
         a_event2.set()
@@ -582,15 +627,15 @@ class TestSELockErrors:
         f2_thread.join()
         f3_thread.join()
 
-        verify_lock(
-            a_lock,
-            exp_q=[
-                (SELockObtainMode.Exclusive, f2_thread, False),
-                (SELockObtainMode.Exclusive, f3_thread, True),
-            ],
+        a_lock.verify_lock(
+            exp_q=exp_q,
             exp_owner_count=-1,
             exp_excl_wait_count=1,
+            verify_structures=False,
         )
+
+        with pytest.raises(LockVerifyError, match=error_msg):
+            a_lock.verify_lock()
 
     def test_se_lock_release_by_shared_waiter(self) -> None:
         """Test release by shared waiter."""

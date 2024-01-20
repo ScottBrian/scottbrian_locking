@@ -104,6 +104,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 import logging
 import threading
+import time
 from typing import Any, Final, NamedTuple, Optional, Type, TYPE_CHECKING, Union
 from typing_extensions import TypeAlias
 
@@ -894,6 +895,7 @@ class SELock:
                     )
                     self.logger.debug(error_msg)
                     raise LockVerifyError(error_msg)
+                time.sleep(0.1)
 
         if verify_structures:
             calc_owner_count = 0
@@ -948,7 +950,7 @@ class SELock:
                     f"{lock_info.excl_wait_count=}, {timeout=}, "
                     f"{calc_owner_count=}, {calc_excl_wait_count=}, "
                     f"{idx_of_first_excl_wait=}, {idx_of_first_excl_event_flag=}, "
-                    f"{idx_of_first_share_wait=}, {idx_of_first_share_event_flag=}"
+                    f"{idx_of_first_share_wait=}, {idx_of_first_share_event_flag=}."
                 )
                 self.logger.debug(error_msg)
                 raise LockVerifyError(error_msg)
