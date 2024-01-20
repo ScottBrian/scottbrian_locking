@@ -156,8 +156,8 @@ class LockVerifyError(SELockError):
     pass
 
 
-class LockVerifyTimeout(SELockError):
-    """SELock exception for timeout during verify_lock request."""
+class SELockInputError(SELockError):
+    """SELock exception for input error."""
 
     pass
 
@@ -189,7 +189,7 @@ class LockItem(NamedTuple):
 
     mode: SELockObtainMode
     event_flag: bool
-    thread: str
+    thread: threading.Thread
 
 
 class LockInfo(NamedTuple):
@@ -822,6 +822,7 @@ class SELock:
         exp_owner_count: Optional[int] = None,
         exp_excl_wait_count: Optional[int] = None,
         timeout: OptIntFloat = None,
+        verify_structures: bool = True,
     ) -> None:
         """Verifies that the lock is in the specified state.
 
@@ -830,20 +831,71 @@ class SELock:
                 owners and/or waiters of the lock. If not specified,
                 the lock will be do a minimal verification to ensure
                 the counts are reasonable.
-            exp_owner_count: specifies the expected owner count
+            exp_owner_count: specifies the expected owner count. If
+                specified, exp_q must also be specified.
             exp_excl_wait_count: specifies the expected exclusive wait
-                count
+                count. If specified, exp_q must also be specified.
             timeout: if specifies, specifies the time allowed for the
                 lock to be in the specified state. If not specified, the
-                lock must already be in the specified state at entry.
+                lock must already be in the specified state at entry. If
+                specified, exp_q must also be specified.
+            verify_structures: If True, verify the lock structures
         Raises:
             LockVerifyError: the lock failed to verify, or failed to
                 reach the expected state within the time specified for
                 *timeout*.
 
         """
-        lock_info = self.get_info()
         if exp_q is None:
+            if not verify_structures:
+                error_msg = (
+                    f"lock_verify raising SELockInputError. Nothing was requested to "
+                    f"be verified with {exp_q=} and {verify_structures=}."
+                )
+                self.logger.debug(error_msg)
+                raise SELockInputError(error_msg)
+            if (
+                exp_owner_count is not None
+                or exp_excl_wait_count is not None
+                or timeout is not None
+            ):
+                error_msg = (
+                    f"lock_verify raising SELockInputError. exp_q must be "
+                    f"specified if any of exp_owner_count, exp_excl_wait_count, or "
+                    f"timeout is specified. {exp_q=}, {exp_owner_count=}, "
+                    f"{exp_excl_wait_count=}, {timeout=}."
+                )
+                self.logger.debug(error_msg)
+                raise SELockInputError(error_msg)
+
+        lock_info = self.get_info()
+
+        if exp_q is not None:
+            timer = Timer(timeout=timeout)
+            while True:
+                if (
+                    exp_q == lock_info.queue
+                    and (
+                        exp_owner_count is None
+                        or exp_owner_count == lock_info.owner_count
+                    )
+                    and (
+                        exp_excl_wait_count is None
+                        or exp_excl_wait_count == lock_info.excl_wait_count
+                    )
+                ):
+                    break
+                if timeout is None or timer.is_expired():
+                    error_msg = (
+                        f"lock_verify raising LockVerifyError. {exp_q=} , "
+                        f"{lock_info.queue=}, {exp_owner_count=}, "
+                        f"{lock_info.owner_count=}, {exp_excl_wait_count=}, "
+                        f"{lock_info.excl_wait_count=}, {timeout=}"
+                    )
+                    self.logger.debug(error_msg)
+                    raise LockVerifyError(error_msg)
+
+        if verify_structures:
             calc_owner_count = 0
             calc_excl_wait_count = 0
             idx_of_first_excl_wait = -1
@@ -900,31 +952,6 @@ class SELock:
                 )
                 self.logger.debug(error_msg)
                 raise LockVerifyError(error_msg)
-
-        else:
-            timer = Timer(timeout=timeout)
-            while True:
-                if (
-                    exp_q == lock_info.queue
-                    and (
-                        exp_owner_count is None
-                        or exp_owner_count == lock_info.owner_count
-                    )
-                    and (
-                        exp_excl_wait_count is None
-                        or exp_excl_wait_count == lock_info.excl_wait_count
-                    )
-                ):
-                    return
-                if timeout is None or timer.is_expired():
-                    error_msg = (
-                        f"lock_verify raising LockVerifyError. {exp_q=} , "
-                        f"{lock_info.queue=}, {exp_owner_count=}, "
-                        f"{lock_info.owner_count=}, {exp_excl_wait_count=}, "
-                        f"{lock_info.excl_wait_count=}, {timeout=}"
-                    )
-                    self.logger.debug(error_msg)
-                    raise LockVerifyError(error_msg)
 
 
 ########################################################################

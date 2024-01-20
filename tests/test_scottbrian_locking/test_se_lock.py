@@ -28,13 +28,15 @@ from scottbrian_locking.se_lock import (
     SELockObtain,
     LockItem,
 )
-from scottbrian_locking.se_lock import AttemptedReleaseByExclusiveWaiter
-from scottbrian_locking.se_lock import AttemptedReleaseBySharedWaiter
-from scottbrian_locking.se_lock import AttemptedReleaseOfUnownedLock
-from scottbrian_locking.se_lock import SELockObtainTimeout
-from scottbrian_locking.se_lock import SELockOwnerNotAlive
-from scottbrian_locking.se_lock import SELockObtainMode
-
+from scottbrian_locking.se_lock import (
+    AttemptedReleaseByExclusiveWaiter,
+    AttemptedReleaseBySharedWaiter,
+    AttemptedReleaseOfUnownedLock,
+    SELockInputError,
+    SELockObtainTimeout,
+    SELockOwnerNotAlive,
+    SELockObtainMode,
+)
 
 ########################################################################
 # Set up logging
@@ -218,6 +220,172 @@ def use_context2_arg(request: Any) -> int:
 class TestSELockErrors:
     """TestSELock class."""
 
+    ####################################################################
+    # test_lock_verify_bad_input
+    ####################################################################
+    def test_lock_verify_bad_input(self) -> None:
+        """Test lock_verify with bad input."""
+        ################################################################
+        # SELockInputError
+        ################################################################
+        a_lock = SELock()
+        error_msg = (
+            "lock_verify raising SELockInputError. Nothing was requested to "
+            "be verified with exp_q=None and verify_structures=False."
+        )
+        with pytest.raises(SELockInputError, match=error_msg):
+            a_lock.verify_lock(verify_structures=False)
+
+        with pytest.raises(SELockInputError, match=error_msg):
+            a_lock.verify_lock(exp_q=None, verify_structures=False)
+
+        error_msg = (
+            "lock_verify raising SELockInputError. exp_q must be "
+            "specified if any of exp_owner_count, exp_excl_wait_count, or "
+            "timeout is specified. exp_q=None, exp_owner_count=0, "
+            "exp_excl_wait_count=None, timeout=None."
+        )
+
+        with pytest.raises(SELockInputError, match=error_msg):
+            a_lock.verify_lock(exp_owner_count=0)
+
+        error_msg = (
+            "lock_verify raising SELockInputError. exp_q must be "
+            "specified if any of exp_owner_count, exp_excl_wait_count, or "
+            "timeout is specified. exp_q=None, exp_owner_count=None, "
+            "exp_excl_wait_count=0, timeout=None."
+        )
+
+        with pytest.raises(SELockInputError, match=error_msg):
+            a_lock.verify_lock(exp_excl_wait_count=0)
+
+        error_msg = (
+            "lock_verify raising SELockInputError. exp_q must be "
+            "specified if any of exp_owner_count, exp_excl_wait_count, or "
+            "timeout is specified. exp_q=None, exp_owner_count=None, "
+            "exp_excl_wait_count=None, timeout=0."
+        )
+
+        with pytest.raises(SELockInputError, match=error_msg):
+            a_lock.verify_lock(timeout=0)
+
+        for exp_owner_count in (None, 0):
+            for exp_excl_wait_count in (None, 0):
+                for timeout in (None, 0):
+                    error_msg = (
+                        "lock_verify raising SELockInputError. exp_q must be "
+                        "specified if any of exp_owner_count, exp_excl_wait_count, or "
+                        f"timeout is specified. exp_q=None, {exp_owner_count=}, "
+                        f"{exp_excl_wait_count=}, {timeout=}."
+                    )
+                    if not (
+                        exp_owner_count is None
+                        and exp_excl_wait_count is None
+                        and timeout is None
+                    ):
+                        with pytest.raises(SELockInputError, match=error_msg):
+                            a_lock.verify_lock(
+                                exp_owner_count=exp_owner_count,
+                                exp_excl_wait_count=exp_excl_wait_count,
+                                timeout=timeout,
+                            )
+                        with pytest.raises(SELockInputError, match=error_msg):
+                            a_lock.verify_lock(
+                                exp_owner_count=exp_owner_count,
+                                exp_excl_wait_count=exp_excl_wait_count,
+                                timeout=timeout,
+                                verify_structures=True,
+                            )
+
+                        error_msg = (
+                            "lock_verify raising SELockInputError. Nothing was "
+                            "requested to be verified with exp_q=None and "
+                            "verify_structures=False."
+                        )
+                        with pytest.raises(SELockInputError, match=error_msg):
+                            a_lock.verify_lock(
+                                exp_owner_count=exp_owner_count,
+                                exp_excl_wait_count=exp_excl_wait_count,
+                                timeout=timeout,
+                                verify_structures=False,
+                            )
+
+        ################################################################
+        # all other combinations should not produce an error
+        ################################################################
+
+        a_lock.verify_lock()
+        a_lock.verify_lock(exp_q=[])
+        a_lock.verify_lock(exp_q=[], verify_structures=False)
+        a_lock.verify_lock(verify_structures=True)
+        a_lock.verify_lock(exp_q=[], verify_structures=True)
+
+        a_lock.verify_lock(exp_q=[], exp_owner_count=0)
+        a_lock.verify_lock(exp_q=[], exp_owner_count=0, verify_structures=False)
+        a_lock.verify_lock(exp_q=[], exp_owner_count=0, verify_structures=True)
+
+        a_lock.verify_lock(exp_q=[], exp_excl_wait_count=0)
+        a_lock.verify_lock(exp_q=[], exp_excl_wait_count=0, verify_structures=False)
+        a_lock.verify_lock(exp_q=[], exp_excl_wait_count=0, verify_structures=True)
+
+        a_lock.verify_lock(exp_q=[], exp_owner_count=0, exp_excl_wait_count=0)
+        a_lock.verify_lock(
+            exp_q=[], exp_owner_count=0, exp_excl_wait_count=0, verify_structures=False
+        )
+        a_lock.verify_lock(
+            exp_q=[], exp_owner_count=0, exp_excl_wait_count=0, verify_structures=True
+        )
+
+        a_lock.verify_lock(exp_q=[], timeout=1)
+        a_lock.verify_lock(exp_q=[], timeout=1, verify_structures=False)
+        a_lock.verify_lock(exp_q=[], timeout=1, verify_structures=True)
+
+        a_lock.verify_lock(exp_q=[], exp_owner_count=0, timeout=1)
+        a_lock.verify_lock(
+            exp_q=[], exp_owner_count=0, timeout=1, verify_structures=False
+        )
+        a_lock.verify_lock(
+            exp_q=[], exp_owner_count=0, timeout=1, verify_structures=True
+        )
+
+        a_lock.verify_lock(exp_q=[], exp_excl_wait_count=0, timeout=1)
+        a_lock.verify_lock(
+            exp_q=[], exp_excl_wait_count=0, timeout=1, verify_structures=False
+        )
+        a_lock.verify_lock(
+            exp_q=[], exp_excl_wait_count=0, timeout=1, verify_structures=True
+        )
+
+        a_lock.verify_lock(
+            exp_q=[], exp_owner_count=0, exp_excl_wait_count=0, timeout=1
+        )
+        a_lock.verify_lock(
+            exp_q=[],
+            exp_owner_count=0,
+            exp_excl_wait_count=0,
+            timeout=1,
+            verify_structures=False,
+        )
+        a_lock.verify_lock(
+            exp_q=[],
+            exp_owner_count=0,
+            exp_excl_wait_count=0,
+            timeout=1,
+            verify_structures=True,
+        )
+
+        for exp_owner_count in (None, 0):
+            for exp_excl_wait_count in (None, 0):
+                for timeout in (None, 0, 1):
+                    for verify_structures in (None, True, False):
+                        a_lock.verify_lock(
+                            exp_q=[],
+                            exp_owner_count=exp_owner_count,
+                            exp_excl_wait_count=exp_excl_wait_count,
+                            timeout=timeout,
+                            verify_structures=verify_structures,
+                        )
+
     def test_se_lock_release_unowned_lock(self) -> None:
         """Test release of unowned lock."""
         ################################################################
@@ -226,13 +394,10 @@ class TestSELockErrors:
         with pytest.raises(AttemptedReleaseOfUnownedLock):
             a_lock = SELock()
 
-            a_lock.verify_lock()
-
             a_lock.verify_lock(exp_q=[], exp_owner_count=0, exp_excl_wait_count=0)
 
             a_lock.release()
 
-        a_lock.verify_lock()
         a_lock.verify_lock(exp_q=[], exp_owner_count=0, exp_excl_wait_count=0)
 
     def test_se_lock_release_owner_not_alive(self) -> None:
@@ -244,7 +409,6 @@ class TestSELockErrors:
         def f1() -> None:
             """Function that obtains lock and end still holding it."""
             a_lock.obtain_excl()
-            a_lock.verify_lock()
             a_lock.verify_lock(
                 exp_q=[
                     LockItem(
@@ -258,14 +422,12 @@ class TestSELockErrors:
             )
 
         a_lock = SELock()
-        a_lock.verify_lock()
         a_lock.verify_lock(exp_q=[], exp_owner_count=0, exp_excl_wait_count=0)
 
         f1_thread = threading.Thread(target=f1)
         f1_thread.start()
         f1_thread.join()
 
-        a_lock.verify_lock()
         a_lock.verify_lock(
             exp_q=[
                 LockItem(
@@ -286,7 +448,6 @@ class TestSELockErrors:
         # needs and then must release the lock
         alpha_thread = threading.current_thread()
 
-        a_lock.verify_lock()
         a_lock.verify_lock(
             exp_q=[
                 LockItem(
