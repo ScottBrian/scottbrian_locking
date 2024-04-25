@@ -836,7 +836,7 @@ class SELock:
                 specified, exp_q must also be specified.
             exp_excl_wait_count: specifies the expected exclusive wait
                 count. If specified, exp_q must also be specified.
-            timeout: if specifies, specifies the time allowed for the
+            timeout: if specified, specifies the time allowed for the
                 lock to be in the specified state. If not specified, the
                 lock must already be in the specified state at entry. If
                 specified, exp_q must also be specified.
@@ -944,7 +944,9 @@ class SELock:
                 or share_event_flag_error
             ):
                 error_msg = (
-                    f"lock_verify raising LockVerifyError. {exp_q=} , "
+                    f"lock_verify raising LockVerifyError. {owner_count_error=}, "
+                    f"{wait_count_error=}, {excl_event_flag_error=}, "
+                    f"{share_event_flag_error=}, {exp_q=} , "
                     f"{lock_info.queue=}, {exp_owner_count=}, "
                     f"{lock_info.owner_count=}, {exp_excl_wait_count=}, "
                     f"{lock_info.excl_wait_count=}, {timeout=}, "
@@ -969,11 +971,11 @@ class SELockShare:
 
         Args:
             se_lock: instance of SELock
-            obtain_tf: allows the obtain to be conditional to allow
-                coding the with statement and then getting or not
+            obtain_tf: allows the obtain request to be conditional to
+                allow coding the with statement and then getting or not
                 getting the lock as dynamically required
             timeout: number of seconds that the request is allowed to
-                       wait for the lock before an error is raised
+                wait for the lock before an error is raised
 
         Raises:
             SELockOwnerNotAlive: The owner of the SELock is not alive
