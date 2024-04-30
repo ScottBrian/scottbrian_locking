@@ -6,6 +6,7 @@
 from dataclasses import dataclass
 from enum import Enum, auto
 import logging
+import re
 import threading
 import time
 from typing import Any, cast, Optional
@@ -13,7 +14,9 @@ from typing import Any, cast, Optional
 ########################################################################
 # Third Party
 ########################################################################
+from scottbrian_utils.diag_msg import get_formatted_call_sequence as call_seq
 from scottbrian_utils.flower_box import print_flower_box_msg as flowers
+from scottbrian_utils.log_verifier import LogVer
 from scottbrian_utils.msgs import Msgs
 from scottbrian_utils.stop_watch import StopWatch
 import pytest
@@ -466,7 +469,10 @@ class TestSELockErrors:
             exp_excl_wait_count=1,
         )
 
-    def test_se_lock_release_by_exclusive_waiter(self) -> None:
+    def test_se_lock_release_by_exclusive_waiter(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
         """Test release by exclusive waiter."""
 
         ################################################################
@@ -475,6 +481,16 @@ class TestSELockErrors:
         def f2() -> None:
             """Function that gets lock exclusive to cause contention."""
             # a_lock.obtain(mode=SELock._Mode.EXCL)
+            f2_log_msg = (
+                re.escape(
+                    "SELock granted immediate exclusive control to "
+                    f"{f2_thread.name}, "
+                )
+                + "caller threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f2:[0-9]+"
+            )
+
+            log_ver.add_pattern(pattern=f2_log_msg)
+
             a_lock.obtain_excl()
 
             a_lock.verify_lock(
@@ -495,6 +511,12 @@ class TestSELockErrors:
         def f3() -> None:
             """Function that tries to release lock while waiting."""
             # a_lock.obtain(mode=SELock._Mode.EXCL)
+            f3_log_msg = (
+                re.escape(f"Thread {f3_thread.name} waiting " f"for SELock, ")
+                + "caller threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f3:[0-9]+"
+            )
+            log_ver.add_pattern(pattern=f3_log_msg)
+
             a_lock.obtain_excl()
 
             f3_exp_q = [
@@ -516,7 +538,7 @@ class TestSELockErrors:
                 verify_structures=False,
             )
 
-            f3_error_msg = (
+            f3_error_msg = re.escape(
                 "lock_verify raising LockVerifyError. owner_count_error=False, "
                 "wait_count_error=False, excl_event_flag_error=True, "
                 f"share_event_flag_error=False, exp_q={f3_exp_q}, "
@@ -528,7 +550,8 @@ class TestSELockErrors:
                 "idx_of_first_share_wait=-1, idx_of_first_share_event_flag=-1."
             )
 
-            with pytest.raises(LockVerifyError):  # , match=f3_error_msg):
+            log_ver.add_pattern(pattern=f3_error_msg, level=logging.ERROR)
+            with pytest.raises(LockVerifyError, match=f3_error_msg):
                 a_lock.verify_lock(
                     exp_q=f3_exp_q,
                     exp_owner_count=-1,
@@ -539,7 +562,14 @@ class TestSELockErrors:
             a_event.set()
             a_event3.wait()
 
-            with pytest.raises(AttemptedReleaseByExclusiveWaiter):
+            f3_error_msg = re.escape(
+                f"Thread {f3_thread.name} raising "
+                "AttemptedReleaseByExclusiveWaiter because the entry found for "
+                "that thread was still waiting for exclusive control of the lock. "
+                f"Request call sequence {call_seq(latest=1, depth=2)}"
+            )
+            log_ver.add_pattern(pattern=f3_error_msg, level=logging.ERROR)
+            with pytest.raises(AttemptedReleaseByExclusiveWaiter, match=f3_error_msg):
                 a_lock.release()
 
             a_lock.verify_lock(
@@ -549,17 +579,22 @@ class TestSELockErrors:
                 verify_structures=False,
             )
 
-            f3_error_msg = (
-                f"lock_verify raising LockVerifyError. exp_q=None, "
-                f"lock_info.queue={f3_exp_q}, exp_owner_count=None, "
-                f"lock_info.owner_count=-1, exp_excl_wait_count=None, "
-                f"lock_info.excl_wait_count=1, timeout=None, "
-                f"calc_owner_count=-1, calc_excl_wait_count=1, "
-                f"idx_of_first_excl_wait=1, idx_of_first_excl_event_flag=1, "
-                f"idx_of_first_share_wait=-1, idx_of_first_share_event_flag=-1."
+            f3_error_msg = re.escape(
+                "lock_verify raising LockVerifyError. owner_count_error=False, "
+                "wait_count_error=False, excl_event_flag_error=True, "
+                f"share_event_flag_error=False, exp_q=None, "
+                f"lock_info.queue={exp_q}, exp_owner_count=None, "
+                "lock_info.owner_count=-1, exp_excl_wait_count=None, "
+                "lock_info.excl_wait_count=1, timeout=None, "
+                "calc_owner_count=-1, calc_excl_wait_count=1, "
+                "idx_of_first_excl_wait=1, idx_of_first_excl_event_flag=1, "
+                "idx_of_first_share_wait=-1, idx_of_first_share_event_flag=-1."
             )
-            with pytest.raises(LockVerifyError):  # , match=f3_error_msg):
+            log_ver.add_pattern(pattern=f3_error_msg, level=logging.ERROR)
+            with pytest.raises(LockVerifyError, match=f3_error_msg):
                 a_lock.verify_lock()
+
+        log_ver = LogVer(log_name="scottbrian_locking.se_lock")
 
         a_lock = SELock()
 
@@ -629,17 +664,25 @@ class TestSELockErrors:
             verify_structures=False,  # avoid error for now
         )
 
-        error_msg = (
-            f"lock_verify raising LockVerifyError. exp_q=None, "
-            f"lock_info.queue={exp_q}, exp_owner_count=None, "
-            f"lock_info.owner_count=-1, exp_excl_wait_count=None, "
-            f"lock_info.excl_wait_count=1, timeout=None, "
-            f"calc_owner_count=-1, calc_excl_wait_count=1, "
-            f"idx_of_first_excl_wait=1, idx_of_first_excl_event_flag=1, "
-            f"idx_of_first_share_wait=-1, idx_of_first_share_event_flag=-1."
+        error_msg = re.escape(
+            "lock_verify raising LockVerifyError. owner_count_error=False, "
+            "wait_count_error=False, excl_event_flag_error=True, "
+            f"share_event_flag_error=False, exp_q={exp_q}, "
+            f"lock_info.queue={exp_q}, exp_owner_count=-1, "
+            "lock_info.owner_count=-1, exp_excl_wait_count=1, "
+            "lock_info.excl_wait_count=1, timeout=None, "
+            "calc_owner_count=-1, calc_excl_wait_count=1, "
+            "idx_of_first_excl_wait=1, idx_of_first_excl_event_flag=1, "
+            "idx_of_first_share_wait=-1, idx_of_first_share_event_flag=-1."
         )
-        with pytest.raises(LockVerifyError):  # , match=error_msg):
-            a_lock.verify_lock()  # default is verify_structures=True
+        log_ver.add_pattern(pattern=error_msg, level=logging.ERROR)
+        with pytest.raises(LockVerifyError, match=error_msg):
+            a_lock.verify_lock(
+                exp_q=exp_q,
+                exp_owner_count=-1,
+                exp_excl_wait_count=1,
+                verify_structures=True,
+            )
 
         # tell f2 and f3 to end - we will leave the lock damaged
         a_event2.set()
@@ -655,8 +698,28 @@ class TestSELockErrors:
             verify_structures=False,
         )
 
-        with pytest.raises(LockVerifyError):  # , match=error_msg):
+        error_msg = re.escape(
+            "lock_verify raising LockVerifyError. owner_count_error=False, "
+            "wait_count_error=False, excl_event_flag_error=True, "
+            f"share_event_flag_error=False, exp_q=None, "
+            f"lock_info.queue={exp_q}, exp_owner_count=None, "
+            "lock_info.owner_count=-1, exp_excl_wait_count=None, "
+            "lock_info.excl_wait_count=1, timeout=None, "
+            "calc_owner_count=-1, calc_excl_wait_count=1, "
+            "idx_of_first_excl_wait=1, idx_of_first_excl_event_flag=1, "
+            "idx_of_first_share_wait=-1, idx_of_first_share_event_flag=-1."
+        )
+
+        log_ver.add_pattern(pattern=error_msg, level=logging.ERROR)
+        with pytest.raises(LockVerifyError, match=error_msg):
             a_lock.verify_lock()
+
+        ################################################################
+        # check log results
+        ################################################################
+        match_results = log_ver.get_match_results(caplog=caplog)
+        log_ver.print_match_results(match_results, print_matched=True)
+        log_ver.verify_match_results(match_results)
 
     def test_se_lock_release_by_shared_waiter(self) -> None:
         """Test release by shared waiter."""

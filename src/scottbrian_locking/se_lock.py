@@ -559,17 +559,16 @@ class SELock:
                 # instead since that is likely the root cause of the
                 # timeout.
                 if not self.owner_wait_q[0].thread.is_alive():
-                    self.logger.debug(
+                    error_msg = (
                         f"Thread {threading.current_thread().name} raising "
-                        "SELockOwnerNotAlive, lock owner thread "
-                        f"{self.owner_wait_q[0].thread}, request call "
-                        f"sequence {call_seq(latest=2, depth=2)}"
+                        "SELockOwnerNotAlive while waiting for a lock because the "
+                        f"lock owner thread {self.owner_wait_q[0].thread} is not "
+                        "alive and will thus never release the lock. "
+                        f"Request call sequence {call_seq(latest=2, depth=2)}"
                     )
-                    raise SELockOwnerNotAlive(
-                        "The owner of the SELock is not alive and "
-                        "will thus never release the lock. "
-                        f"Owner thread = {self.owner_wait_q[0]}"
-                    )
+                    self.logger.error(error_msg)
+
+                    raise SELockOwnerNotAlive(error_msg)
 
                 if timer.is_expired():
                     owner_waiter_desc = self._find_owner_waiter(
@@ -580,19 +579,16 @@ class SELock:
                     if owner_waiter_desc.item_mode == SELock._Mode.EXCL:
                         self.excl_wait_count -= 1
 
-                    self.logger.debug(
+                    error_msg = (
                         f"Thread {threading.current_thread().name} raising "
-                        "SELockObtainTimeout, lock owner thread "
-                        f"{self.owner_wait_q[0].thread}, request call "
-                        f"sequence {call_seq(latest=2, depth=2)}"
+                        "SELockObtainTimeout because the thread has timed out "
+                        "waiting for the current owner thread "
+                        f"{self.owner_wait_q[0].thread.name} to release the lock. "
+                        f"Request call sequence {call_seq(latest=2, depth=2)}"
                     )
-                    raise SELockObtainTimeout(
-                        "A lock obtain request by thread "
-                        f"{threading.current_thread().name} has timed out "
-                        f"waiting for the current owner thread "
-                        f"{self.owner_wait_q[0].thread.name} to release the "
-                        f"lock."
-                    )
+                    self.logger.error(error_msg)
+
+                    raise SELockObtainTimeout(error_msg)
 
     ####################################################################
     # _find_owner_waiter
@@ -667,48 +663,43 @@ class SELock:
             )
 
             if owner_waiter_desc.item_idx == -1:  # if not found
-                self.logger.debug(
+                error_msg = (
                     f"Thread {threading.current_thread().name} raising "
-                    "AttemptedReleaseOfUnownedLock, request call "
-                    f"sequence {call_seq(latest=2, depth=2)}"
+                    "AttemptedReleaseOfUnownedLock because an entry on the "
+                    "owner-waiter queue was not found for that thread. "
+                    f"Request call sequence {call_seq(latest=2, depth=2)}"
                 )
-                raise AttemptedReleaseOfUnownedLock(
-                    "A release of the SELock was attempted by thread "
-                    f"{threading.current_thread()} but an entry on the "
-                    "owner-waiter queue was not found for that thread."
-                )
+                self.logger.error(error_msg)
+
+                raise AttemptedReleaseOfUnownedLock(error_msg)
 
             if (
                 owner_waiter_desc.item_idx != 0
                 and owner_waiter_desc.item_mode == SELock._Mode.EXCL
             ):
-                self.logger.debug(
+                error_msg = (
                     f"Thread {threading.current_thread().name} raising "
-                    "AttemptedReleaseByExclusiveWaiter, request call "
-                    f"sequence {call_seq(latest=2, depth=2)}"
+                    "AttemptedReleaseByExclusiveWaiter because the entry found for "
+                    "that thread was still waiting for exclusive control of the lock. "
+                    f"Request call sequence {call_seq(latest=2, depth=2)}"
                 )
-                raise AttemptedReleaseByExclusiveWaiter(
-                    "A release of the SELock was attempted by thread "
-                    f"{threading.current_thread()} but the entry "
-                    "found was still waiting for exclusive control of "
-                    "the lock."
-                )
+                self.logger.error(error_msg)
+
+                raise AttemptedReleaseByExclusiveWaiter(error_msg)
 
             if (
                 0 <= owner_waiter_desc.excl_idx < owner_waiter_desc.item_idx
                 and owner_waiter_desc.item_mode == SELock._Mode.SHARE
             ):
-                self.logger.debug(
+                error_msg = (
                     f"Thread {threading.current_thread().name} raising "
-                    "AttemptedReleaseBySharedWaiter, request call "
-                    f"sequence {call_seq(latest=2, depth=2)}"
+                    "AttemptedReleaseBySharedWaiter because the entry found for that "
+                    "thread was still waiting for shared control of the lock. "
+                    f"Request call sequence {call_seq(latest=2, depth=2)}"
                 )
-                raise AttemptedReleaseBySharedWaiter(
-                    "A release of the SELock was attempted by thread "
-                    f"{threading.current_thread()} but the entry "
-                    "found was still waiting for shared control of "
-                    "the lock."
-                )
+                self.logger.error(error_msg)
+
+                raise AttemptedReleaseBySharedWaiter(error_msg)
 
             # release the lock
             if owner_waiter_desc.item_mode == SELock._Mode.EXCL:
@@ -850,10 +841,10 @@ class SELock:
         if exp_q is None:
             if not verify_structures:
                 error_msg = (
-                    f"lock_verify raising SELockInputError. Nothing was requested to "
+                    "lock_verify raising SELockInputError. Nothing was requested to "
                     f"be verified with {exp_q=} and {verify_structures=}."
                 )
-                self.logger.debug(error_msg)
+                self.logger.error(error_msg)
                 raise SELockInputError(error_msg)
             if (
                 exp_owner_count is not None
@@ -861,12 +852,12 @@ class SELock:
                 or timeout is not None
             ):
                 error_msg = (
-                    f"lock_verify raising SELockInputError. exp_q must be "
-                    f"specified if any of exp_owner_count, exp_excl_wait_count, or "
+                    "lock_verify raising SELockInputError. exp_q must be "
+                    "specified if any of exp_owner_count, exp_excl_wait_count, or "
                     f"timeout is specified. {exp_q=}, {exp_owner_count=}, "
                     f"{exp_excl_wait_count=}, {timeout=}."
                 )
-                self.logger.debug(error_msg)
+                self.logger.error(error_msg)
                 raise SELockInputError(error_msg)
 
         lock_info = self.get_info()
@@ -893,7 +884,7 @@ class SELock:
                         f"{lock_info.owner_count=}, {exp_excl_wait_count=}, "
                         f"{lock_info.excl_wait_count=}, {timeout=}"
                     )
-                    self.logger.debug(error_msg)
+                    self.logger.error(error_msg)
                     raise LockVerifyError(error_msg)
                 time.sleep(0.1)
 
@@ -946,7 +937,7 @@ class SELock:
                 error_msg = (
                     f"lock_verify raising LockVerifyError. {owner_count_error=}, "
                     f"{wait_count_error=}, {excl_event_flag_error=}, "
-                    f"{share_event_flag_error=}, {exp_q=} , "
+                    f"{share_event_flag_error=}, {exp_q=}, "
                     f"{lock_info.queue=}, {exp_owner_count=}, "
                     f"{lock_info.owner_count=}, {exp_excl_wait_count=}, "
                     f"{lock_info.excl_wait_count=}, {timeout=}, "
@@ -954,7 +945,7 @@ class SELock:
                     f"{idx_of_first_excl_wait=}, {idx_of_first_excl_event_flag=}, "
                     f"{idx_of_first_share_wait=}, {idx_of_first_share_event_flag=}."
                 )
-                self.logger.debug(error_msg)
+                self.logger.error(error_msg)
                 raise LockVerifyError(error_msg)
 
 
