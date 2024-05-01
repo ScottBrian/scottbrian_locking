@@ -512,7 +512,7 @@ class TestSELockErrors:
             """Function that tries to release lock while waiting."""
             # a_lock.obtain(mode=SELock._Mode.EXCL)
             f3_log_msg = (
-                re.escape(f"Thread {f3_thread.name} waiting " f"for SELock, ")
+                re.escape(f"Thread {f3_thread.name} waiting for SELock, ")
                 + "caller threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f3:[0-9]+"
             )
             log_ver.add_pattern(pattern=f3_log_msg)
@@ -1201,6 +1201,243 @@ class TestSELockBasic:
         assert lock_info.owner_count == 0
 
         self.log_test_msg("mainline exit")
+
+    def test_se_lock_release_by_excl_owner(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Test release by shared waiter."""
+
+        ################################################################
+        # AttemptedReleaseBySharedWaiter
+        ################################################################
+        def f4() -> None:
+            """Function that gets lock exclusive to cause contention."""
+
+            f4_log_msg = (
+                re.escape(
+                    "SELock granted immediate exclusive control to "
+                    f"{f4_thread.name}, "
+                )
+                + "caller threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f4:[0-9]+"
+            )
+
+            log_ver.add_pattern(pattern=f4_log_msg)
+
+            # a_lock.obtain(mode=SELock._Mode.EXCL)
+            a_lock.obtain_excl()
+
+            a_lock.verify_lock(
+                exp_q=[
+                    LockItem(
+                        mode=SELockObtainMode.Exclusive,
+                        event_flag=False,
+                        thread=f4_thread,
+                    ),
+                ],
+                exp_owner_count=-1,
+                exp_excl_wait_count=0,
+            )
+
+            mainline_wait_event.set()
+            f4_wait_event.wait()
+
+            f4_exp_q = [
+                LockItem(
+                    mode=SELockObtainMode.Exclusive,
+                    event_flag=False,
+                    thread=f4_thread,
+                ),
+                LockItem(
+                    mode=SELockObtainMode.Share,
+                    event_flag=False,
+                    thread=f5_thread,
+                ),
+            ]
+
+            a_lock.verify_lock(
+                exp_q=f4_exp_q,
+                exp_owner_count=-1,
+                exp_excl_wait_count=0,
+                verify_structures=True,
+            )
+
+            f4_log_msg = (
+                re.escape(
+                    f"Thread {threading.current_thread().name} released SELock, mode "
+                    f"EXCL, call sequence: "
+                )
+                + "threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f5:[0-9]+"
+            )
+            log_ver.add_pattern(pattern=f4_log_msg)
+
+            f4_log_msg = (
+                re.escape(f"Thread {f5_thread.name} waiting for SELock, ")
+                + "caller threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f5:[0-9]+"
+            )
+            log_ver.add_pattern(pattern=f4_log_msg)
+
+            a_lock.release()
+
+            a_lock.verify_lock(
+                exp_q=[
+                    LockItem(
+                        mode=SELockObtainMode.Share,
+                        event_flag=True,
+                        thread=f5_thread,
+                    )
+                ],
+                exp_owner_count=1,
+                exp_excl_wait_count=0,
+                verify_structures=True,
+            )
+
+            # tell mainline we are done
+            mainline_wait_event.set()
+
+        def f5() -> None:
+            """Function that tries to release lock while waiting."""
+
+            f5_log_msg = (
+                re.escape(f"Thread {f5_thread.name} waiting for SELock, ")
+                + "caller threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f5:[0-9]+"
+            )
+            log_ver.add_pattern(pattern=f5_log_msg)
+
+            # a_lock.obtain(mode=SELock._Mode.SHARE)
+            a_lock.obtain_share()
+
+            # we have been woken normally
+            a_lock.verify_lock(
+                exp_q=[
+                    LockItem(
+                        mode=SELockObtainMode.Share,
+                        event_flag=True,
+                        thread=f5_thread,
+                    )
+                ],
+                exp_owner_count=1,
+                exp_excl_wait_count=0,
+                verify_structures=True,
+            )
+
+            f5_wait_event.wait()
+
+            a_lock.release()
+
+            a_lock.verify_lock(
+                exp_q=[],
+                exp_owner_count=0,
+                exp_excl_wait_count=0,
+                verify_structures=True,
+            )
+
+            # tell mainline we are done
+            mainline_wait_event.set()
+
+        ################################################################
+        # mainline
+        ################################################################
+        log_ver = LogVer(log_name="scottbrian_locking.se_lock")
+
+        a_lock = SELock()
+
+        a_lock.verify_lock(
+            exp_q=[],
+            exp_owner_count=0,
+            exp_excl_wait_count=0,
+        )
+
+        mainline_wait_event = threading.Event()
+        f4_wait_event = threading.Event()
+        f5_wait_event = threading.Event()
+        f4_thread = threading.Thread(target=f4)
+        f5_thread = threading.Thread(target=f5)
+
+        # start f4 to get the lock exclusive
+        f4_thread.start()
+
+        # wait for f4 to tell us it has the lock
+        mainline_wait_event.wait()
+        mainline_wait_event.clear()
+
+        # verify lock
+        a_lock.verify_lock(
+            exp_q=[
+                LockItem(
+                    mode=SELockObtainMode.Exclusive,
+                    event_flag=False,
+                    thread=f4_thread,
+                ),
+            ],
+            exp_owner_count=-1,
+            exp_excl_wait_count=0,
+        )
+
+        # start f5 to queue up for the lock behind f4
+        f5_thread.start()
+
+        # loop 10 secs until verify_lock sees both locks in the queue
+        a_lock.verify_lock(
+            exp_q=[
+                LockItem(
+                    mode=SELockObtainMode.Exclusive,
+                    event_flag=False,
+                    thread=f4_thread,
+                ),
+                LockItem(
+                    mode=SELockObtainMode.Share,
+                    event_flag=False,
+                    thread=f5_thread,
+                ),
+            ],
+            exp_owner_count=-1,
+            exp_excl_wait_count=0,
+            timeout=10,
+        )
+
+        # post f4 to release the excl lock
+        f4_wait_event.set()
+
+        # wait for f4 to tell us it did the release
+        mainline_wait_event.wait()
+        mainline_wait_event.clear()
+
+        a_lock.verify_lock(
+            exp_q=[
+                LockItem(
+                    mode=SELockObtainMode.Share,
+                    event_flag=True,
+                    thread=f5_thread,
+                )
+            ],
+            exp_owner_count=1,
+            exp_excl_wait_count=0,
+            verify_structures=True,
+        )
+
+        # tell f5 to release the lock
+        f5_wait_event.set()
+
+        # wait for f5 to tell us the lock is released
+        mainline_wait_event.wait()
+
+        a_lock.verify_lock(
+            exp_q=[],
+            exp_owner_count=0,
+            exp_excl_wait_count=0,
+            verify_structures=True,
+        )
+
+        f4_thread.join()
+        f5_thread.join()
+
+        ################################################################
+        # check log results
+        ################################################################
+        match_results = log_ver.get_match_results(caplog=caplog)
+        log_ver.print_match_results(match_results, print_matched=True)
+        log_ver.verify_match_results(match_results)
 
 
 ########################################################################

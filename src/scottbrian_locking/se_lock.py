@@ -918,7 +918,7 @@ class SELock:
                     if lock_item.event_flag and idx_of_first_share_event_flag == -1:
                         idx_of_first_share_event_flag = idx
 
-            # note in the following code the check for owner_count
+            # note in the following code that the check for owner_count
             # being less than or equal to -1 is correct since a
             # recursive excl obtain will simply bump down the
             # owner count to track the recursive depth
@@ -929,13 +929,12 @@ class SELock:
             wait_count_error = lock_info.excl_wait_count != calc_excl_wait_count
             excl_event_flag_error = idx_of_first_excl_event_flag > 0
 
-            # $$$ @sbt - this seems wrong: if q is excl/shr and excl
-            # does release, we should find idx_of_first_excl_wait == -1
-            # and the new first item on q is shared and should have
-            # event flag set - but this means share_event_flag_error
-            # will be triggered for a normal scenario
+            # the following code must ensure that idx_of_first_excl_wait
+            # is greater than 0 since an idx_of_first_excl_wait of 0 is
+            # not possible and a value of -1 indicates that there are no
+            # excl lock waiters
             share_event_flag_error = (
-                idx_of_first_excl_wait < idx_of_first_share_event_flag
+                0 < idx_of_first_excl_wait < idx_of_first_share_event_flag
             )
 
             if (
