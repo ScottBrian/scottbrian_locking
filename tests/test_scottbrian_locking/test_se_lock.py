@@ -520,21 +520,26 @@ class TestSELockErrors:
                 f"Thread {threading.current_thread().name} waiting "
                 f"for SELock, caller "
             )
-            + "caller TestSELockErrors::test_se_lock_release_owner_not_alive[0-9]+ "
-            "-> test_se_lock.py::f2:[0-9]+"
+            + "python.py::pytest_pyfunc_call:[0-9]+ -> "
+            "test_se_lock.py::TestSELockErrors."
+            "test_se_lock_release_owner_not_alive:[0-9]+"
         )
 
         log_ver.add_pattern(pattern=ml_log_msg)
 
-        ml_error_msg = re.escape(
-            f"Thread {threading.current_thread().name} raising "
-            "SELockOwnerNotAlive while waiting for a lock because the "
-            f"lock owner thread {f1_thread.thread} is not "
-            "alive and will thus never release the lock. "
-            f"Request call sequence {call_seq(latest=1, depth=2)}"
+        ml_error_msg = (
+            re.escape(
+                f"Thread {threading.current_thread().name} raising "
+                "SELockOwnerNotAlive while waiting for a lock because the "
+                f"lock owner thread {f1_thread} is not "
+                "alive and will thus never release the lock. "
+            )
+            + "Request call sequence python.py::pytest_pyfunc_call:[0-9]+ -> "
+            "test_se_lock.py::TestSELockErrors."
+            "test_se_lock_release_owner_not_alive:[0-9]+"
         )
 
-        log_ver.add_pattern(pattern=ml_log_msg, level=logging.ERROR)
+        log_ver.add_pattern(pattern=ml_error_msg, level=logging.ERROR)
 
         with pytest.raises(SELockOwnerNotAlive, match=ml_error_msg):
             # f1 obtained the lock and exited
@@ -935,7 +940,7 @@ class TestSELockErrors:
                 "thread was still waiting for shared control of the lock. "
                 f"Request call sequence {call_seq(latest=1, depth=2)}"
             )
-
+            log_ver.add_pattern(pattern=f5_release_error_msg, level=logging.ERROR)
             with pytest.raises(
                 AttemptedReleaseBySharedWaiter, match=f5_release_error_msg
             ):
@@ -1076,6 +1081,7 @@ class TestSELockErrors:
         # should provide the same result as above, except that we need
         # to set the exp_q here to get the current status of the threads
         # which are now in a stopped state
+
         exp_q = [
             LockItem(
                 mode=SELockObtainMode.Exclusive,
@@ -1088,6 +1094,17 @@ class TestSELockErrors:
                 thread=f5_thread,
             ),
         ]
+        mainline_error_msg = re.escape(
+            "lock_verify raising LockVerifyError. owner_count_error=False, "
+            "wait_count_error=False, excl_event_flag_error=False, "
+            f"share_event_flag_error=True, exp_q={exp_q}, "
+            f"lock_info.queue={exp_q}, exp_owner_count=-1, "
+            "lock_info.owner_count=-1, exp_excl_wait_count=0, "
+            "lock_info.excl_wait_count=0, timeout=None, "
+            "calc_owner_count=-1, calc_excl_wait_count=0, "
+            "idx_of_first_excl_wait=-1, idx_of_first_excl_event_flag=-1, "
+            "idx_of_first_share_wait=-1, idx_of_first_share_event_flag=1."
+        )
         log_ver.add_pattern(pattern=mainline_error_msg, level=logging.ERROR)
         with pytest.raises(LockVerifyError, match=mainline_error_msg):
             a_lock.verify_lock(
@@ -1159,7 +1176,7 @@ class TestSELockBasic:
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 1
         assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread == thread_name
+        assert lock_info.queue[0].thread.name == thread_name
         assert not lock_info.queue[0].event_flag
         assert lock_info.owner_count == -1
         assert lock_info.excl_wait_count == 0
@@ -1176,7 +1193,7 @@ class TestSELockBasic:
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 1
         assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread == thread_name
+        assert lock_info.queue[0].thread.name == thread_name
         assert not lock_info.queue[0].event_flag
         assert lock_info.owner_count == -1
         assert lock_info.excl_wait_count == 0
@@ -1193,7 +1210,7 @@ class TestSELockBasic:
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 1
         assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread == thread_name
+        assert lock_info.queue[0].thread.name == thread_name
         assert not lock_info.queue[0].event_flag
         assert lock_info.owner_count == -1
         assert lock_info.excl_wait_count == 0
@@ -1203,7 +1220,7 @@ class TestSELockBasic:
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 1
         assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread == thread_name
+        assert lock_info.queue[0].thread.name == thread_name
         assert not lock_info.queue[0].event_flag
         assert lock_info.owner_count == -2
         assert lock_info.excl_wait_count == 0
@@ -1213,7 +1230,7 @@ class TestSELockBasic:
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 1
         assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread == thread_name
+        assert lock_info.queue[0].thread.name == thread_name
         assert not lock_info.queue[0].event_flag
         assert lock_info.owner_count == -1
         assert lock_info.excl_wait_count == 0
@@ -1230,7 +1247,7 @@ class TestSELockBasic:
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 1
         assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread == thread_name
+        assert lock_info.queue[0].thread.name == thread_name
         assert not lock_info.queue[0].event_flag
         assert lock_info.owner_count == -1
         assert lock_info.excl_wait_count == 0
@@ -1240,7 +1257,7 @@ class TestSELockBasic:
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 1
         assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread == thread_name
+        assert lock_info.queue[0].thread.name == thread_name
         assert not lock_info.queue[0].event_flag
         assert lock_info.owner_count == -2
         assert lock_info.excl_wait_count == 0
@@ -1250,7 +1267,7 @@ class TestSELockBasic:
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 1
         assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread == thread_name
+        assert lock_info.queue[0].thread.name == thread_name
         assert not lock_info.queue[0].event_flag
         assert lock_info.owner_count == -1
         assert lock_info.excl_wait_count == 0
@@ -1266,7 +1283,7 @@ class TestSELockBasic:
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 1
         assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread == thread_name
+        assert lock_info.queue[0].thread.name == thread_name
         assert not lock_info.queue[0].event_flag
         assert lock_info.owner_count == -1
         assert lock_info.excl_wait_count == 0
@@ -1276,7 +1293,7 @@ class TestSELockBasic:
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 1
         assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread == thread_name
+        assert lock_info.queue[0].thread.name == thread_name
         assert not lock_info.queue[0].event_flag
         assert lock_info.owner_count == -2
         assert lock_info.excl_wait_count == 0
@@ -1286,7 +1303,7 @@ class TestSELockBasic:
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 1
         assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread == thread_name
+        assert lock_info.queue[0].thread.name == thread_name
         assert not lock_info.queue[0].event_flag
         assert lock_info.owner_count == -3
         assert lock_info.excl_wait_count == 0
@@ -1296,7 +1313,7 @@ class TestSELockBasic:
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 1
         assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread == thread_name
+        assert lock_info.queue[0].thread.name == thread_name
         assert not lock_info.queue[0].event_flag
         assert lock_info.owner_count == -2
         assert lock_info.excl_wait_count == 0
@@ -1306,7 +1323,7 @@ class TestSELockBasic:
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 1
         assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread == thread_name
+        assert lock_info.queue[0].thread.name == thread_name
         assert not lock_info.queue[0].event_flag
         assert lock_info.owner_count == -1
         assert lock_info.excl_wait_count == 0

@@ -935,7 +935,7 @@ class SELock:
             # excl lock waiters
             share_event_flag_error = (
                 0 < idx_of_first_excl_wait < idx_of_first_share_event_flag
-            )
+            ) or (lock_info.owner_count < 0 < idx_of_first_share_event_flag)
 
             if (
                 owner_count_error
