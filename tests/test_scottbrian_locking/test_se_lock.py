@@ -87,116 +87,116 @@ class ContextArg(Enum):
 ########################################################################
 # number_requests_arg fixture
 ########################################################################
-number_requests_arg_list = [0, 1, 2, 3]
+# number_requests_arg_list = [0, 1, 2, 3]
+#
+#
+# @pytest.fixture(params=number_requests_arg_list)  # type: ignore
+# def num_share_requests1_arg(request: Any) -> int:
+#     """Using different requests.
+#
+#     Args:
+#         request: special fixture that returns the fixture params
+#
+#     Returns:
+#         The params values are returned one at a time
+#     """
+#     return cast(int, request.param)
 
 
-@pytest.fixture(params=number_requests_arg_list)  # type: ignore
-def num_share_requests1_arg(request: Any) -> int:
-    """Using different requests.
-
-    Args:
-        request: special fixture that returns the fixture params
-
-    Returns:
-        The params values are returned one at a time
-    """
-    return cast(int, request.param)
-
-
-@pytest.fixture(params=number_requests_arg_list)  # type: ignore
-def num_share_requests2_arg(request: Any) -> int:
-    """Using different requests.
-
-    Args:
-        request: special fixture that returns the fixture params
-
-    Returns:
-        The params values are returned one at a time
-    """
-    return cast(int, request.param)
+# @pytest.fixture(params=number_requests_arg_list)  # type: ignore
+# def num_share_requests2_arg(request: Any) -> int:
+#     """Using different requests.
+#
+#     Args:
+#         request: special fixture that returns the fixture params
+#
+#     Returns:
+#         The params values are returned one at a time
+#     """
+#     return cast(int, request.param)
 
 
-@pytest.fixture(params=number_requests_arg_list)  # type: ignore
-def num_excl_requests1_arg(request: Any) -> int:
-    """Using different requests.
+# @pytest.fixture(params=number_requests_arg_list)  # type: ignore
+# def num_excl_requests1_arg(request: Any) -> int:
+#     """Using different requests.
+#
+#     Args:
+#         request: special fixture that returns the fixture params
+#
+#     Returns:
+#         The params values are returned one at a time
+#     """
+#     return cast(int, request.param)
 
-    Args:
-        request: special fixture that returns the fixture params
 
-    Returns:
-        The params values are returned one at a time
-    """
-    return cast(int, request.param)
-
-
-@pytest.fixture(params=number_requests_arg_list)  # type: ignore
-def num_excl_requests2_arg(request: Any) -> int:
-    """Using different requests.
-
-    Args:
-        request: special fixture that returns the fixture params
-
-    Returns:
-        The params values are returned one at a time
-    """
-    return cast(int, request.param)
+# @pytest.fixture(params=number_requests_arg_list)  # type: ignore
+# def num_excl_requests2_arg(request: Any) -> int:
+#     """Using different requests.
+#
+#     Args:
+#         request: special fixture that returns the fixture params
+#
+#     Returns:
+#         The params values are returned one at a time
+#     """
+#     return cast(int, request.param)
 
 
 ########################################################################
 # release_position_arg fixture
 ########################################################################
-release_position_arg_list = [0, 1, 2]
-
-
-@pytest.fixture(params=release_position_arg_list)  # type: ignore
-def release_position_arg(request: Any) -> int:
-    """Using different release positions.
-
-    Args:
-        request: special fixture that returns the fixture params
-
-    Returns:
-        The params values are returned one at a time
-    """
-    return cast(int, request.param)
+# release_position_arg_list = [0, 1, 2]
+#
+#
+# @pytest.fixture(params=release_position_arg_list)  # type: ignore
+# def release_position_arg(request: Any) -> int:
+#     """Using different release positions.
+#
+#     Args:
+#         request: special fixture that returns the fixture params
+#
+#     Returns:
+#         The params values are returned one at a time
+#     """
+#     return cast(int, request.param)
 
 
 ########################################################################
 # use_context_arg fixture
 ########################################################################
-use_context_arg_list = [0, 1, 2, 3]
+# use_context_arg_list = [0, 1, 2, 3]
+#
+#
+# @pytest.fixture(params=use_context_arg_list)  # type: ignore
+# def use_context_arg(request: Any) -> int:
+#     """Use context lock obtain.
+#
+#     Args:
+#         request: special fixture that returns the fixture params
+#
+#     Returns:
+#         The params values are returned one at a time
+#     """
+#     return cast(int, request.param)
 
 
-@pytest.fixture(params=use_context_arg_list)  # type: ignore
-def use_context_arg(request: Any) -> int:
-    """Use context lock obtain.
-
-    Args:
-        request: special fixture that returns the fixture params
-
-    Returns:
-        The params values are returned one at a time
-    """
-    return cast(int, request.param)
-
-
-########################################################################
-# use_context2_arg fixture
-########################################################################
-use_context2_arg_list = [0, 1, 2, 3]
-
-
-@pytest.fixture(params=use_context2_arg_list)  # type: ignore
-def use_context2_arg(request: Any) -> int:
-    """Use context lock obtain.
-
-    Args:
-        request: special fixture that returns the fixture params
-
-    Returns:
-        The params values are returned one at a time
-    """
-    return cast(int, request.param)
+# ########################################################################
+# # use_context2_arg fixture
+# ########################################################################
+# use_context2_arg_list = [0, 1, 2, 3]
+#
+#
+# @pytest.fixture(params=use_context2_arg_list)  # type: ignore
+# def use_context2_arg(request: Any) -> int:
+#     """Use context lock obtain.
+#
+#     Args:
+#         request: special fixture that returns the fixture params
+#
+#     Returns:
+#         The params values are returned one at a time
+#     """
+#     return cast(int, request.param)
 
 
 ########################################################################
@@ -227,56 +227,70 @@ class TestSELockErrors:
     ####################################################################
     # test_lock_verify_bad_input
     ####################################################################
-    def test_lock_verify_bad_input(self) -> None:
+    def test_lock_verify_bad_input(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
         """Test lock_verify with bad input."""
         ################################################################
         # SELockInputError
         ################################################################
+        ################################################################
+        # mainline
+        ################################################################
+        log_ver = LogVer(log_name="scottbrian_locking.se_lock")
         a_lock = SELock()
-        error_msg = (
+
+        ml_error_msg = (
             "lock_verify raising SELockInputError. Nothing was requested to "
             "be verified with exp_q=None and verify_structures=False."
         )
-        with pytest.raises(SELockInputError, match=error_msg):
+
+        log_ver.add_pattern(pattern=ml_error_msg, level=logging.ERROR)
+        with pytest.raises(SELockInputError, match=ml_error_msg):
             a_lock.verify_lock(verify_structures=False)
 
-        with pytest.raises(SELockInputError, match=error_msg):
+        log_ver.add_pattern(pattern=ml_error_msg, level=logging.ERROR)
+        with pytest.raises(SELockInputError, match=ml_error_msg):
             a_lock.verify_lock(exp_q=None, verify_structures=False)
 
-        error_msg = (
+        ml_error_msg = (
             "lock_verify raising SELockInputError. exp_q must be "
             "specified if any of exp_owner_count, exp_excl_wait_count, or "
             "timeout is specified. exp_q=None, exp_owner_count=0, "
             "exp_excl_wait_count=None, timeout=None."
         )
 
-        with pytest.raises(SELockInputError, match=error_msg):
+        log_ver.add_pattern(pattern=ml_error_msg, level=logging.ERROR)
+        with pytest.raises(SELockInputError, match=ml_error_msg):
             a_lock.verify_lock(exp_owner_count=0)
 
-        error_msg = (
+        ml_error_msg = (
             "lock_verify raising SELockInputError. exp_q must be "
             "specified if any of exp_owner_count, exp_excl_wait_count, or "
             "timeout is specified. exp_q=None, exp_owner_count=None, "
             "exp_excl_wait_count=0, timeout=None."
         )
 
-        with pytest.raises(SELockInputError, match=error_msg):
+        log_ver.add_pattern(pattern=ml_error_msg, level=logging.ERROR)
+        with pytest.raises(SELockInputError, match=ml_error_msg):
             a_lock.verify_lock(exp_excl_wait_count=0)
 
-        error_msg = (
+        ml_error_msg = (
             "lock_verify raising SELockInputError. exp_q must be "
             "specified if any of exp_owner_count, exp_excl_wait_count, or "
             "timeout is specified. exp_q=None, exp_owner_count=None, "
             "exp_excl_wait_count=None, timeout=0."
         )
 
-        with pytest.raises(SELockInputError, match=error_msg):
+        log_ver.add_pattern(pattern=ml_error_msg, level=logging.ERROR)
+        with pytest.raises(SELockInputError, match=ml_error_msg):
             a_lock.verify_lock(timeout=0)
 
         for exp_owner_count in (None, 0):
             for exp_excl_wait_count in (None, 0):
                 for timeout in (None, 0):
-                    error_msg = (
+                    ml_error_msg = (
                         "lock_verify raising SELockInputError. exp_q must be "
                         "specified if any of exp_owner_count, exp_excl_wait_count, or "
                         f"timeout is specified. exp_q=None, {exp_owner_count=}, "
@@ -287,13 +301,16 @@ class TestSELockErrors:
                         and exp_excl_wait_count is None
                         and timeout is None
                     ):
-                        with pytest.raises(SELockInputError, match=error_msg):
+                        log_ver.add_pattern(pattern=ml_error_msg, level=logging.ERROR)
+                        with pytest.raises(SELockInputError, match=ml_error_msg):
                             a_lock.verify_lock(
                                 exp_owner_count=exp_owner_count,
                                 exp_excl_wait_count=exp_excl_wait_count,
                                 timeout=timeout,
                             )
-                        with pytest.raises(SELockInputError, match=error_msg):
+
+                        log_ver.add_pattern(pattern=ml_error_msg, level=logging.ERROR)
+                        with pytest.raises(SELockInputError, match=ml_error_msg):
                             a_lock.verify_lock(
                                 exp_owner_count=exp_owner_count,
                                 exp_excl_wait_count=exp_excl_wait_count,
@@ -301,12 +318,14 @@ class TestSELockErrors:
                                 verify_structures=True,
                             )
 
-                        error_msg = (
+                        ml_error_msg = (
                             "lock_verify raising SELockInputError. Nothing was "
                             "requested to be verified with exp_q=None and "
                             "verify_structures=False."
                         )
-                        with pytest.raises(SELockInputError, match=error_msg):
+
+                        log_ver.add_pattern(pattern=ml_error_msg, level=logging.ERROR)
+                        with pytest.raises(SELockInputError, match=ml_error_msg):
                             a_lock.verify_lock(
                                 exp_owner_count=exp_owner_count,
                                 exp_excl_wait_count=exp_excl_wait_count,
@@ -389,13 +408,39 @@ class TestSELockErrors:
                             timeout=timeout,
                             verify_structures=verify_structures,
                         )
+        ################################################################
+        # check log results
+        ################################################################
+        match_results = log_ver.get_match_results(caplog=caplog)
+        log_ver.print_match_results(match_results, print_matched=True)
+        log_ver.verify_match_results(match_results)
 
-    def test_se_lock_release_unowned_lock(self) -> None:
+    def test_se_lock_release_unowned_lock(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
         """Test release of unowned lock."""
         ################################################################
         # AttemptedReleaseOfUnownedLock
         ################################################################
-        with pytest.raises(AttemptedReleaseOfUnownedLock):
+        ################################################################
+        # mainline
+        ################################################################
+        log_ver = LogVer(log_name="scottbrian_locking.se_lock")
+
+        ml_error_msg = (
+            re.escape(
+                f"Thread {threading.current_thread().name} raising "
+                "AttemptedReleaseOfUnownedLock because an entry on the "
+                "owner-waiter queue was not found for that thread. "
+                f"Request call sequence "
+            )
+            + f"python.py::pytest_pyfunc_call:[0-9]+ -> test_se_lock.py::"
+            f"TestSELockErrors.test_se_lock_release_unowned_lock:[0-9]+"
+        )
+
+        log_ver.add_pattern(pattern=ml_error_msg, level=logging.ERROR)
+        with pytest.raises(AttemptedReleaseOfUnownedLock, match=ml_error_msg):
             a_lock = SELock()
 
             a_lock.verify_lock(exp_q=[], exp_owner_count=0, exp_excl_wait_count=0)
@@ -404,7 +449,17 @@ class TestSELockErrors:
 
         a_lock.verify_lock(exp_q=[], exp_owner_count=0, exp_excl_wait_count=0)
 
-    def test_se_lock_release_owner_not_alive(self) -> None:
+        ################################################################
+        # check log results
+        ################################################################
+        match_results = log_ver.get_match_results(caplog=caplog)
+        log_ver.print_match_results(match_results, print_matched=True)
+        log_ver.verify_match_results(match_results)
+
+    def test_se_lock_release_owner_not_alive(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
         """Test owner become not alive while waiting for lock."""
 
         ################################################################
@@ -412,7 +467,18 @@ class TestSELockErrors:
         ################################################################
         def f1() -> None:
             """Function that obtains lock and end still holding it."""
+            f1_log_msg = (
+                re.escape(
+                    "SELock granted immediate exclusive control to "
+                    f"{f1_thread.name}, "
+                )
+                + "caller threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f1:[0-9]+"
+            )
+
+            log_ver.add_pattern(pattern=f1_log_msg)
+
             a_lock.obtain_excl()
+
             a_lock.verify_lock(
                 exp_q=[
                     LockItem(
@@ -424,6 +490,11 @@ class TestSELockErrors:
                 exp_owner_count=-1,
                 exp_excl_wait_count=0,
             )
+
+        ################################################################
+        # mainline
+        ################################################################
+        log_ver = LogVer(log_name="scottbrian_locking.se_lock")
 
         a_lock = SELock()
         a_lock.verify_lock(exp_q=[], exp_owner_count=0, exp_excl_wait_count=0)
@@ -444,7 +515,28 @@ class TestSELockErrors:
             exp_excl_wait_count=0,
         )
 
-        with pytest.raises(SELockOwnerNotAlive):
+        ml_log_msg = (
+            re.escape(
+                f"Thread {threading.current_thread().name} waiting "
+                f"for SELock, caller "
+            )
+            + "caller TestSELockErrors::test_se_lock_release_owner_not_alive[0-9]+ "
+            "-> test_se_lock.py::f2:[0-9]+"
+        )
+
+        log_ver.add_pattern(pattern=ml_log_msg)
+
+        ml_error_msg = re.escape(
+            f"Thread {threading.current_thread().name} raising "
+            "SELockOwnerNotAlive while waiting for a lock because the "
+            f"lock owner thread {f1_thread.thread} is not "
+            "alive and will thus never release the lock. "
+            f"Request call sequence {call_seq(latest=1, depth=2)}"
+        )
+
+        log_ver.add_pattern(pattern=ml_log_msg, level=logging.ERROR)
+
+        with pytest.raises(SELockOwnerNotAlive, match=ml_error_msg):
             # f1 obtained the lock and exited
             a_lock.obtain_excl()
 
@@ -468,6 +560,13 @@ class TestSELockErrors:
             exp_owner_count=-1,
             exp_excl_wait_count=1,
         )
+
+        ################################################################
+        # check log results
+        ################################################################
+        match_results = log_ver.get_match_results(caplog=caplog)
+        log_ver.print_match_results(match_results, print_matched=True)
+        log_ver.verify_match_results(match_results)
 
     def test_se_lock_release_by_exclusive_waiter(
         self,
@@ -737,7 +836,10 @@ class TestSELockErrors:
         log_ver.print_match_results(match_results, print_matched=True)
         log_ver.verify_match_results(match_results)
 
-    def test_se_lock_release_by_shared_waiter(self) -> None:
+    def test_se_lock_release_by_shared_waiter(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
         """Test release by shared waiter."""
 
         ################################################################
@@ -995,6 +1097,13 @@ class TestSELockErrors:
                 verify_structures=True,
             )
 
+        ################################################################
+        # check log results
+        ################################################################
+        match_results = log_ver.get_match_results(caplog=caplog)
+        log_ver.print_match_results(match_results, print_matched=True)
+        log_ver.verify_match_results(match_results)
+
 
 ########################################################################
 # TestSELockBasic class to test SELock methods
@@ -1028,8 +1137,16 @@ class TestSELockBasic:
     ####################################################################
     # repr
     ####################################################################
-    def test_se_lock_obtain_excl(self) -> None:
+    def test_se_lock_obtain_excl(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
         """Test exclusive lock obtain."""
+
+        ################################################################
+        # mainline
+        ################################################################
+        log_ver = LogVer(log_name="scottbrian_locking.se_lock")
 
         self.log_test_msg("mainline entry")
 
@@ -1202,6 +1319,13 @@ class TestSELockBasic:
 
         self.log_test_msg("mainline exit")
 
+        ################################################################
+        # check log results
+        ################################################################
+        match_results = log_ver.get_match_results(caplog=caplog)
+        log_ver.print_match_results(match_results, print_matched=True)
+        log_ver.verify_match_results(match_results)
+
     def test_se_lock_release_by_excl_owner(
         self,
         caplog: pytest.LogCaptureFixture,
@@ -1264,16 +1388,20 @@ class TestSELockBasic:
 
             f4_log_msg = (
                 re.escape(
-                    f"Thread {threading.current_thread().name} released SELock, mode "
+                    f"Thread {f4_thread.name} released SELock, mode "
                     f"EXCL, call sequence: "
                 )
-                + "threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f5:[0-9]+"
+                + "threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f4:[0-9]+"
             )
             log_ver.add_pattern(pattern=f4_log_msg)
 
             f4_log_msg = (
-                re.escape(f"Thread {f5_thread.name} waiting for SELock, ")
-                + "caller threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f5:[0-9]+"
+                re.escape(
+                    f"Thread {f4_thread.name} "
+                    f"granted shared control to waiting "
+                    f"thread {f5_thread}, call sequence: "
+                )
+                + "threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f4:[0-9]+"
             )
             log_ver.add_pattern(pattern=f4_log_msg)
 
@@ -1322,6 +1450,15 @@ class TestSELockBasic:
             )
 
             f5_wait_event.wait()
+
+            f5_log_msg = (
+                re.escape(
+                    f"Thread {f5_thread.name} released SELock, mode "
+                    f"SHARE, call sequence: "
+                )
+                + "threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f5:[0-9]+"
+            )
+            log_ver.add_pattern(pattern=f5_log_msg)
 
             a_lock.release()
 
@@ -1479,6 +1616,7 @@ class TestSELock:
         use_timeout_arg: int,
         ml_context_arg: ContextArg,
         f1_context_arg: ContextArg,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Method to test se_lock timeout cases.
 
@@ -1606,8 +1744,10 @@ class TestSELock:
             logger.debug("f1 exiting")
 
         ################################################################
-        # Mainline
+        # mainline
         ################################################################
+        log_ver = LogVer(log_name="scottbrian_locking.se_lock")
+
         logger.debug("mainline entered")
 
         msgs = Msgs()
@@ -1753,9 +1893,22 @@ class TestSELock:
         f1_thread.join()
         logger.debug("mainline exiting")
 
+        ################################################################
+        # check log results
+        ################################################################
+        match_results = log_ver.get_match_results(caplog=caplog)
+        log_ver.print_match_results(match_results, print_matched=True)
+        log_ver.verify_match_results(match_results)
+
     ####################################################################
     # test_se_lock_combos
     ####################################################################
+    @pytest.mark.parametrize("num_share_requests1_arg", [0, 1, 2, 3])
+    @pytest.mark.parametrize("num_share_requests2_arg", [0, 1, 2, 3])
+    @pytest.mark.parametrize("num_excl_requests1_arg", [0, 1, 2, 3])
+    @pytest.mark.parametrize("num_excl_requests2_arg", [0, 1, 2, 3])
+    @pytest.mark.parametrize("release_position_arg", [0, 1, 2])
+    @pytest.mark.parametrize("use_context_arg", [0, 1, 2, 3])
     def test_se_lock_combos(
         self,
         num_share_requests1_arg: int,
@@ -1764,6 +1917,7 @@ class TestSELock:
         num_excl_requests2_arg: int,
         release_position_arg: int,
         use_context_arg: int,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Method to test se_lock excl and share combos.
 
@@ -1849,6 +2003,11 @@ class TestSELock:
                     with SELockObtain(a_lock, obtain_mode=SELockObtainMode.Exclusive):
                         f1_verify()
                         a_event.wait()
+
+        ################################################################
+        # mainline
+        ################################################################
+        log_ver = LogVer(log_name="scottbrian_locking.se_lock")
 
         @dataclass
         class ThreadEvent:
@@ -2009,6 +2168,13 @@ class TestSELock:
                 work_excl2 -= 1
 
             assert len(a_lock) == request_number + 1
+
+        ################################################################
+        # check log results
+        ################################################################
+        match_results = log_ver.get_match_results(caplog=caplog)
+        log_ver.print_match_results(match_results, print_matched=True)
+        log_ver.verify_match_results(match_results)
 
 
 ########################################################################

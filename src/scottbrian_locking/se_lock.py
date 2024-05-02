@@ -667,7 +667,7 @@ class SELock:
                     f"Thread {threading.current_thread().name} raising "
                     "AttemptedReleaseOfUnownedLock because an entry on the "
                     "owner-waiter queue was not found for that thread. "
-                    f"Request call sequence {call_seq(latest=2, depth=2)}"
+                    f"Request call sequence {call_seq(latest=1, depth=2)}"
                 )
                 self.logger.error(error_msg)
 
