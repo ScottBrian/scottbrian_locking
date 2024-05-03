@@ -433,7 +433,7 @@ class TestSELockErrors:
                 f"Thread {threading.current_thread().name} raising "
                 "AttemptedReleaseOfUnownedLock because an entry on the "
                 "owner-waiter queue was not found for that thread. "
-                f"Request call sequence "
+                f"Request call sequence: "
             )
             + f"python.py::pytest_pyfunc_call:[0-9]+ -> test_se_lock.py::"
             f"TestSELockErrors.test_se_lock_release_unowned_lock:[0-9]+"
@@ -472,7 +472,7 @@ class TestSELockErrors:
                     "SELock granted immediate exclusive control to "
                     f"{f1_thread.name}, "
                 )
-                + "caller threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f1:[0-9]+"
+                + "call sequence: threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f1:[0-9]+"
             )
 
             log_ver.add_pattern(pattern=f1_log_msg)
@@ -518,7 +518,7 @@ class TestSELockErrors:
         ml_log_msg = (
             re.escape(
                 f"Thread {threading.current_thread().name} waiting "
-                f"for SELock, caller "
+                f"for SELock, call sequence: "
             )
             + "python.py::pytest_pyfunc_call:[0-9]+ -> "
             "test_se_lock.py::TestSELockErrors."
@@ -534,7 +534,7 @@ class TestSELockErrors:
                 f"lock owner thread {f1_thread} is not "
                 "alive and will thus never release the lock. "
             )
-            + "Request call sequence python.py::pytest_pyfunc_call:[0-9]+ -> "
+            + "Request call sequence: python.py::pytest_pyfunc_call:[0-9]+ -> "
             "test_se_lock.py::TestSELockErrors."
             "test_se_lock_release_owner_not_alive:[0-9]+"
         )
@@ -590,7 +590,7 @@ class TestSELockErrors:
                     "SELock granted immediate exclusive control to "
                     f"{f2_thread.name}, "
                 )
-                + "caller threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f2:[0-9]+"
+                + "call sequence: threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f2:[0-9]+"
             )
 
             log_ver.add_pattern(pattern=f2_log_msg)
@@ -617,7 +617,7 @@ class TestSELockErrors:
             # a_lock.obtain(mode=SELock._Mode.EXCL)
             f3_log_msg = (
                 re.escape(f"Thread {f3_thread.name} waiting for SELock, ")
-                + "caller threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f3:[0-9]+"
+                + "call sequence: threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f3:[0-9]+"
             )
             log_ver.add_pattern(pattern=f3_log_msg)
 
@@ -670,7 +670,7 @@ class TestSELockErrors:
                 f"Thread {f3_thread.name} raising "
                 "AttemptedReleaseByExclusiveWaiter because the entry found for "
                 "that thread was still waiting for exclusive control of the lock. "
-                f"Request call sequence {call_seq(latest=1, depth=2)}"
+                f"Request call sequence: {call_seq(latest=1, depth=2)}"
             )
             log_ver.add_pattern(pattern=f3_error_msg, level=logging.ERROR)
             with pytest.raises(AttemptedReleaseByExclusiveWaiter, match=f3_error_msg):
@@ -858,7 +858,7 @@ class TestSELockErrors:
                     "SELock granted immediate exclusive control to "
                     f"{f4_thread.name}, "
                 )
-                + "caller threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f4:[0-9]+"
+                + "call sequence: threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f4:[0-9]+"
             )
 
             log_ver.add_pattern(pattern=f4_log_msg)
@@ -886,7 +886,7 @@ class TestSELockErrors:
 
             f5_log_msg = (
                 re.escape(f"Thread {f5_thread.name} waiting for SELock, ")
-                + "caller threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f5:[0-9]+"
+                + "call sequence: threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f5:[0-9]+"
             )
             log_ver.add_pattern(pattern=f5_log_msg)
 
@@ -938,7 +938,7 @@ class TestSELockErrors:
                 f"Thread {f5_thread.name} raising "
                 "AttemptedReleaseBySharedWaiter because the entry found for that "
                 "thread was still waiting for shared control of the lock. "
-                f"Request call sequence {call_seq(latest=1, depth=2)}"
+                f"Request call sequence: {call_seq(latest=1, depth=2)}"
             )
             log_ver.add_pattern(pattern=f5_release_error_msg, level=logging.ERROR)
             with pytest.raises(
@@ -1172,8 +1172,19 @@ class TestSELockBasic:
         a_se_lock = SELock()
 
         self.log_test_msg("about to do step 1")
+
+        ml_pattern = (
+            f"SELock granted immediate exclusive control to {thread_name}, "
+            "call sequence: python.py::pytest_pyfunc_call:[0-9]+ -> "
+            "test_se_lock.py::TestSELockBasic.test_se_lock_obtain_excl:[0-9]+"
+        )
+
+        log_ver.add_pattern(pattern=ml_pattern)
+
         a_se_lock.obtain_excl()
+
         lock_info = a_se_lock.get_info()
+
         assert len(lock_info.queue) == 1
         assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
         assert lock_info.queue[0].thread.name == thread_name
@@ -1182,14 +1193,34 @@ class TestSELockBasic:
         assert lock_info.excl_wait_count == 0
 
         self.log_test_msg("about to do step 2")
+
+        ml_pattern = (
+            f"Thread {thread_name} released SELock, mode "
+            f"EXCL, "
+            "call sequence: python.py::pytest_pyfunc_call:[0-9]+ -> "
+            "test_se_lock.py::TestSELockBasic.test_se_lock_obtain_excl:[0-9]+"
+        )
+        log_ver.add_pattern(pattern=ml_pattern)
+
         a_se_lock.release()
+
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 0
         assert lock_info.owner_count == 0
         assert lock_info.excl_wait_count == 0
 
         self.log_test_msg("about to do step 3")
+
+        ml_pattern = (
+            f"SELock granted immediate exclusive control to {thread_name}, "
+            f"recursion depth: 1, "
+            "call sequence: python.py::pytest_pyfunc_call:[0-9]+ -> "
+            "test_se_lock.py::TestSELockBasic.test_se_lock_obtain_excl:[0-9]+"
+        )
+        log_ver.add_pattern(pattern=ml_pattern)
+
         a_se_lock.obtain_excl_recursive()
+
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 1
         assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
@@ -1199,13 +1230,31 @@ class TestSELockBasic:
         assert lock_info.excl_wait_count == 0
 
         self.log_test_msg("about to do step 4")
+
+        ml_pattern = (
+            f"Thread {thread_name} released SELock, mode "
+            f"EXCL, "
+            "call sequence: python.py::pytest_pyfunc_call:[0-9]+ -> "
+            "test_se_lock.py::TestSELockBasic.test_se_lock_obtain_excl:[0-9]+"
+        )
+        log_ver.add_pattern(pattern=ml_pattern)
+
         a_se_lock.release()
+
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 0
         assert lock_info.owner_count == 0
         assert lock_info.excl_wait_count == 0
 
         self.log_test_msg("about to do step 5")
+
+        ml_pattern = (
+            f"SELock granted immediate exclusive control to {thread_name}, "
+            "call sequence: python.py::pytest_pyfunc_call:[0-9]+ -> "
+            "test_se_lock.py::TestSELockBasic.test_se_lock_obtain_excl:[0-9]+"
+        )
+        log_ver.add_pattern(pattern=ml_pattern)
+
         a_se_lock.obtain_excl()
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 1
@@ -1216,6 +1265,15 @@ class TestSELockBasic:
         assert lock_info.excl_wait_count == 0
 
         self.log_test_msg("about to do step 6")
+
+        ml_pattern = (
+            f"SELock granted immediate exclusive control to {thread_name}, "
+            f"recursion depth: 2, "
+            "call sequence: python.py::pytest_pyfunc_call:[0-9]+ -> "
+            "test_se_lock.py::TestSELockBasic.test_se_lock_obtain_excl:[0-9]+"
+        )
+        log_ver.add_pattern(pattern=ml_pattern)
+
         a_se_lock.obtain_excl_recursive()
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 1
@@ -1226,6 +1284,15 @@ class TestSELockBasic:
         assert lock_info.excl_wait_count == 0
 
         self.log_test_msg("about to do step 7")
+
+        ml_pattern = (
+            f"Thread {thread_name} reduced recursion to 1 for "
+            "SELock, mode EXCL, "
+            "call sequence: python.py::pytest_pyfunc_call:[0-9]+ -> "
+            "test_se_lock.py::TestSELockBasic.test_se_lock_obtain_excl:[0-9]+"
+        )
+        log_ver.add_pattern(pattern=ml_pattern)
+
         a_se_lock.release()
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 1
@@ -1360,7 +1427,7 @@ class TestSELockBasic:
                     "SELock granted immediate exclusive control to "
                     f"{f4_thread.name}, "
                 )
-                + "caller threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f4:[0-9]+"
+                + "call sequence: threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f4:[0-9]+"
             )
 
             log_ver.add_pattern(pattern=f4_log_msg)
@@ -1445,7 +1512,8 @@ class TestSELockBasic:
 
             f5_log_msg = (
                 re.escape(f"Thread {f5_thread.name} waiting for SELock, ")
-                + "caller threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f5:[0-9]+"
+                + "call sequence: threading.py::Thread.run:[0-9]+ -> "
+                "test_se_lock.py::f5:[0-9]+"
             )
             log_ver.add_pattern(pattern=f5_log_msg)
 
