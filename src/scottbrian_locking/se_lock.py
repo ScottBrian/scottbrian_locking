@@ -101,7 +101,7 @@ lock obtained shared
 # Standard Library
 ########################################################################
 from dataclasses import dataclass
-from enum import Enum, auto
+from enum import Enum, StrEnum, auto
 import logging
 import threading
 import time
@@ -212,6 +212,14 @@ class SELock:
 
     """
 
+    class _ReqType(StrEnum):
+        """Enum class for request type."""
+
+        Exclusive = "SELock exclusive obtain request"
+        ExclusiveRecursive = "SELock exclusive recursive obtain request"
+        Share = "SELock share obtain request"
+        Release = "SELock release request"
+
     class _Mode(Enum):
         """Enum class for lock mode."""
 
@@ -221,6 +229,7 @@ class SELock:
     class _LockOwnerWaiter(NamedTuple):
         """NamedTuple for the lock request queue item."""
 
+        req_type: "SELock._ReqType"
         mode: "SELock._Mode"
         event: threading.Event
         thread: threading.Thread
@@ -375,6 +384,7 @@ class SELock:
             wait_event = threading.Event()
             self.owner_wait_q.append(
                 SELock._LockOwnerWaiter(
+                    req_type=SELock._ReqType.Exclusive,
                     mode=SELock._Mode.EXCL,
                     event=wait_event,
                     thread=threading.current_thread(),
@@ -385,8 +395,8 @@ class SELock:
 
                 if self.debug_logging_enabled:
                     self.logger.debug(
-                        "SELock granted immediate exclusive control to "
-                        f"{threading.current_thread().name}, "
+                        "SELock exclusive obtain request granted immediate exclusive "
+                        f"control to thread {threading.current_thread().name}, "
                         f"call sequence: {call_seq(latest=1, depth=2)}"
                     )
                 return
@@ -395,7 +405,11 @@ class SELock:
             self.excl_wait_count += 1
 
         # we are in the queue, wait for lock to be granted to us
-        self._wait_for_lock(wait_event=wait_event, timeout=timeout)
+        self._wait_for_lock(
+            wait_event=wait_event,
+            req_type=SELock._ReqType.Exclusive,
+            timeout=timeout,
+        )
 
     ####################################################################
     # obtain_excl
@@ -434,15 +448,46 @@ class SELock:
                 self.owner_count -= 1  # track recursive obtain
                 if self.debug_logging_enabled:
                     self.logger.debug(
-                        "SELock granted immediate exclusive control to "
-                        f"{threading.current_thread().name}, recursion depth: "
-                        f"{abs(self.owner_count)}, "
+                        "SELock exclusive recursive obtain request continues "
+                        "exclusive control with increased recursion depth to "
+                        f"{abs(self.owner_count)} for thread "
+                        f"{threading.current_thread().name}, "
+                        f"call sequence: {call_seq(latest=1, depth=2)}"
+                    )
+
+                return
+
+            # get a wait event to wait on lock if unavailable
+            wait_event = threading.Event()
+            self.owner_wait_q.append(
+                SELock._LockOwnerWaiter(
+                    req_type=SELock._ReqType.ExclusiveRecursive,
+                    mode=SELock._Mode.EXCL,
+                    event=wait_event,
+                    thread=threading.current_thread(),
+                )
+            )
+            if self.owner_count == 0:  # if lock is free
+                self.owner_count = -1  # indicate now owned exclusive
+
+                if self.debug_logging_enabled:
+                    self.logger.debug(
+                        "SELock exclusive recursive obtain request granted "
+                        "immediate exclusive control with recursion depth of 1 for "
+                        f"thread {threading.current_thread().name}, "
                         f"call sequence: {call_seq(latest=1, depth=2)}"
                     )
                 return
 
-        # handle the obtain in the normal path
-        self.obtain_excl(timeout=timeout)
+            # lock not free, bump wait count while se_lock_lock held
+            self.excl_wait_count += 1
+
+        # we are in the queue, wait for lock to be granted to us
+        self._wait_for_lock(
+            wait_event=wait_event,
+            req_type=SELock._ReqType.ExclusiveRecursive,
+            timeout=timeout,
+        )
 
     ####################################################################
     # obtain_share
@@ -477,6 +522,7 @@ class SELock:
             wait_event = threading.Event()
             self.owner_wait_q.append(
                 SELock._LockOwnerWaiter(
+                    req_type=SELock._ReqType.Share,
                     mode=SELock._Mode.SHARE,
                     event=wait_event,
                     thread=threading.current_thread(),
@@ -487,20 +533,29 @@ class SELock:
                 self.owner_count += 1  # bump the share owner count
                 if self.debug_logging_enabled:
                     self.logger.debug(
-                        f"SELock granted immediate shared control to "
-                        f"{threading.current_thread().name}, "
+                        f"SELock share obtain request granted immediate shared control "
+                        f"to thread {threading.current_thread().name}, "
                         f"call sequence: {call_seq(latest=1, depth=2)}"
                     )
                 return
 
         # we are in the queue, wait for lock to be granted to us
-        self._wait_for_lock(wait_event=wait_event, timeout=timeout)
+        self._wait_for_lock(
+            wait_event=wait_event,
+            req_type=SELock._ReqType.Share,
+            timeout=timeout,
+        )
 
     ####################################################################
     # _wait_for_lock
     ####################################################################
 
-    def _wait_for_lock(self, wait_event: threading.Event, timeout: OptIntFloat) -> None:
+    def _wait_for_lock(
+        self,
+        wait_event: threading.Event,
+        req_type: _ReqType,
+        timeout: OptIntFloat,
+    ) -> None:
         """Method to wait for the SELock.
 
         Args:
@@ -538,9 +593,10 @@ class SELock:
         # request the first time we check that current lock owner.
 
         timer = Timer(timeout=timeout)
+
         if self.debug_logging_enabled:
             self.logger.debug(
-                f"Thread {threading.current_thread().name} waiting "
+                f"{req_type} for thread {threading.current_thread().name} waiting "
                 f"for SELock, call sequence: {call_seq(latest=2, depth=2)}"
             )
         while True:
@@ -567,9 +623,9 @@ class SELock:
                 # timeout.
                 if not self.owner_wait_q[0].thread.is_alive():
                     error_msg = (
-                        f"Thread {threading.current_thread().name} raising "
-                        "SELockOwnerNotAlive while waiting for a lock because the "
-                        f"lock owner thread {self.owner_wait_q[0].thread} is not "
+                        f"{req_type} for thread {threading.current_thread().name} "
+                        "raising SELockOwnerNotAlive while waiting for a lock because "
+                        f"the lock owner thread {self.owner_wait_q[0].thread} is not "
                         "alive and will thus never release the lock. "
                         f"Request call sequence: {call_seq(latest=2, depth=2)}"
                     )
@@ -587,8 +643,8 @@ class SELock:
                         self.excl_wait_count -= 1
 
                     error_msg = (
-                        f"Thread {threading.current_thread().name} raising "
-                        "SELockObtainTimeout because the thread has timed out "
+                        f"{req_type} for thread {threading.current_thread().name} "
+                        "raising SELockObtainTimeout because the thread has timed out "
                         "waiting for the current owner thread "
                         f"{self.owner_wait_q[0].thread.name} to release the lock. "
                         f"Request call sequence: {call_seq(latest=2, depth=2)}"
@@ -671,7 +727,8 @@ class SELock:
 
             if owner_waiter_desc.item_idx == -1:  # if not found
                 error_msg = (
-                    f"Thread {threading.current_thread().name} raising "
+                    "SELock release request for thread "
+                    f"{threading.current_thread().name} raising "
                     "AttemptedReleaseOfUnownedLock because an entry on the "
                     "owner-waiter queue was not found for that thread. "
                     f"Request call sequence: {call_seq(latest=1, depth=2)}"
@@ -685,7 +742,8 @@ class SELock:
                 and owner_waiter_desc.item_mode == SELock._Mode.EXCL
             ):
                 error_msg = (
-                    f"Thread {threading.current_thread().name} raising "
+                    "SELock release request for thread "
+                    f"{threading.current_thread().name} raising "
                     "AttemptedReleaseByExclusiveWaiter because the entry found for "
                     "that thread was still waiting for exclusive control of the lock. "
                     f"Request call sequence: {call_seq(latest=2, depth=2)}"
@@ -699,7 +757,8 @@ class SELock:
                 and owner_waiter_desc.item_mode == SELock._Mode.SHARE
             ):
                 error_msg = (
-                    f"Thread {threading.current_thread().name} raising "
+                    "SELock release request for thread "
+                    f"{threading.current_thread().name} raising "
                     "AttemptedReleaseBySharedWaiter because the entry found for that "
                     "thread was still waiting for shared control of the lock. "
                     f"Request call sequence: {call_seq(latest=2, depth=2)}"
@@ -719,9 +778,10 @@ class SELock:
                 if self.owner_count < 0:  # if not yet free
                     if self.debug_logging_enabled:
                         self.logger.debug(
-                            f"Thread {threading.current_thread().name} reduced "
-                            f"recursion to {abs(self.owner_count)} for "
-                            f"SELock, mode {owner_waiter_desc.item_mode.name}, "
+                            "SELock release request continues "
+                            "exclusive control with reduced recursion depth of "
+                            f"{abs(self.owner_count)} for thread "
+                            f"{threading.current_thread().name}, "
                             f"call sequence: {call_seq(latest=1, depth=2)}"
                         )
                     return  # exclusive owner still owns the lock
@@ -730,9 +790,13 @@ class SELock:
             del self.owner_wait_q[owner_waiter_desc.item_idx]
 
             if self.debug_logging_enabled:
+                if owner_waiter_desc.item_mode == SELock._Mode.EXCL:
+                    excl_share = "exclusive"
+                else:
+                    excl_share = "shared"
                 self.logger.debug(
-                    f"Thread {threading.current_thread().name} released "
-                    f"SELock, mode {owner_waiter_desc.item_mode.name}, "
+                    f"SELock release request removed {excl_share} control for thread "
+                    f"{threading.current_thread().name}, "
                     f"call sequence: {call_seq(latest=1, depth=2)}"
                 )
             # Grant ownership to next waiter if lock now available.
@@ -758,7 +822,8 @@ class SELock:
                     self.excl_wait_count -= 1
                     if self.debug_logging_enabled:
                         self.logger.debug(
-                            f"Thread {threading.current_thread().name} "
+                            "SELock release request for thread "
+                            f"{threading.current_thread().name} "
                             f"granted exclusive control to waiting "
                             f"thread {self.owner_wait_q[0].thread}, "
                             f"call sequence: {call_seq(latest=1, depth=2)}"
@@ -787,7 +852,8 @@ class SELock:
                         self.owner_count += 1
                         if self.debug_logging_enabled:
                             self.logger.debug(
-                                f"Thread {threading.current_thread().name} "
+                                f"SELock release request for thread "
+                                f"{threading.current_thread().name} "
                                 f"granted shared control to waiting "
                                 f"thread {item.thread}, "
                                 f"call sequence: {call_seq(latest=1, depth=2)}"

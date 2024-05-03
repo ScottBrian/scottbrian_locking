@@ -467,15 +467,14 @@ class TestSELockErrors:
         ################################################################
         def f1() -> None:
             """Function that obtains lock and end still holding it."""
-            f1_log_msg = (
-                re.escape(
-                    "SELock granted immediate exclusive control to "
-                    f"{f1_thread.name}, "
-                )
-                + "call sequence: threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f1:[0-9]+"
+            f1_pattern = (
+                "SELock exclusive obtain request granted immediate exclusive "
+                f"control to thread {f1_thread.name}, "
+                "call sequence: threading.py::Thread.run:[0-9]+ "
+                "-> test_se_lock.py::f1:[0-9]+"
             )
 
-            log_ver.add_pattern(pattern=f1_log_msg)
+            log_ver.add_pattern(pattern=f1_pattern)
 
             a_lock.obtain_excl()
 
@@ -585,15 +584,14 @@ class TestSELockErrors:
         def f2() -> None:
             """Function that gets lock exclusive to cause contention."""
             # a_lock.obtain(mode=SELock._Mode.EXCL)
-            f2_log_msg = (
-                re.escape(
-                    "SELock granted immediate exclusive control to "
-                    f"{f2_thread.name}, "
-                )
-                + "call sequence: threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f2:[0-9]+"
+            f2_pattern = (
+                "SELock exclusive obtain request granted immediate exclusive "
+                f"control to thread {f2_thread.name}, "
+                "call sequence: threading.py::Thread.run:[0-9]+ "
+                "-> test_se_lock.py::f2:[0-9]+"
             )
 
-            log_ver.add_pattern(pattern=f2_log_msg)
+            log_ver.add_pattern(pattern=f2_pattern)
 
             a_lock.obtain_excl()
 
@@ -853,15 +851,14 @@ class TestSELockErrors:
         def f4() -> None:
             """Function that gets lock exclusive to cause contention."""
 
-            f4_log_msg = (
-                re.escape(
-                    "SELock granted immediate exclusive control to "
-                    f"{f4_thread.name}, "
-                )
-                + "call sequence: threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f4:[0-9]+"
+            f4_pattern = (
+                "SELock exclusive obtain request granted immediate exclusive "
+                f"control to thread {f4_thread.name}, "
+                "call sequence: threading.py::Thread.run:[0-9]+ "
+                "-> test_se_lock.py::f4:[0-9]+"
             )
 
-            log_ver.add_pattern(pattern=f4_log_msg)
+            log_ver.add_pattern(pattern=f4_pattern)
 
             # a_lock.obtain(mode=SELock._Mode.EXCL)
             a_lock.obtain_excl()
@@ -1167,19 +1164,20 @@ class TestSELockBasic:
 
         self.log_test_msg("mainline entry")
 
-        thread_name = threading.current_thread().name
+        ml_thread = threading.current_thread()
 
         a_se_lock = SELock()
 
         self.log_test_msg("about to do step 1")
 
-        ml_pattern = (
-            f"SELock granted immediate exclusive control to {thread_name}, "
+        ml_excl_obtain_pattern = (
+            "SELock exclusive obtain request granted immediate exclusive "
+            f"control to thread {ml_thread.name}, "
             "call sequence: python.py::pytest_pyfunc_call:[0-9]+ -> "
             "test_se_lock.py::TestSELockBasic.test_se_lock_obtain_excl:[0-9]+"
         )
 
-        log_ver.add_pattern(pattern=ml_pattern)
+        log_ver.add_pattern(pattern=ml_excl_obtain_pattern)
 
         a_se_lock.obtain_excl()
 
@@ -1217,6 +1215,12 @@ class TestSELockBasic:
             "call sequence: python.py::pytest_pyfunc_call:[0-9]+ -> "
             "test_se_lock.py::TestSELockBasic.test_se_lock_obtain_excl:[0-9]+"
         )
+        ml_pattern = (
+            "SELock exclusive recursive obtain request granted immediate exclusive "
+            f"control to thread {ml_thread.name}, "
+            "call sequence: python.py::pytest_pyfunc_call:[0-9]+ -> "
+            "test_se_lock.py::TestSELockBasic.test_se_lock_obtain_excl:[0-9]+"
+        )
         log_ver.add_pattern(pattern=ml_pattern)
 
         a_se_lock.obtain_excl_recursive()
@@ -1248,12 +1252,7 @@ class TestSELockBasic:
 
         self.log_test_msg("about to do step 5")
 
-        ml_pattern = (
-            f"SELock granted immediate exclusive control to {thread_name}, "
-            "call sequence: python.py::pytest_pyfunc_call:[0-9]+ -> "
-            "test_se_lock.py::TestSELockBasic.test_se_lock_obtain_excl:[0-9]+"
-        )
-        log_ver.add_pattern(pattern=ml_pattern)
+        log_ver.add_pattern(pattern=ml_excl_obtain_pattern)
 
         a_se_lock.obtain_excl()
         lock_info = a_se_lock.get_info()
@@ -1286,7 +1285,7 @@ class TestSELockBasic:
         self.log_test_msg("about to do step 7")
 
         ml_pattern = (
-            f"Thread {thread_name} reduced recursion to 1 for "
+            f"Thread {thread_name} release reduced recursive ownership count to 1 for "
             "SELock, mode EXCL, "
             "call sequence: python.py::pytest_pyfunc_call:[0-9]+ -> "
             "test_se_lock.py::TestSELockBasic.test_se_lock_obtain_excl:[0-9]+"
