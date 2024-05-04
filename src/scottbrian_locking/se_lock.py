@@ -242,7 +242,7 @@ class SELock:
         item_idx: int
         item_mode: "SELock._Mode"
 
-    WAIT_TIMEOUT: Final[float] = 5.0
+    WAIT_TIMEOUT: Final[float] = 3.0
 
     ####################################################################
     # init
@@ -449,7 +449,7 @@ class SELock:
                 if self.debug_logging_enabled:
                     self.logger.debug(
                         "SELock exclusive recursive obtain request continues "
-                        "exclusive control with increased recursion depth to "
+                        "exclusive control with recursion depth increased to "
                         f"{abs(self.owner_count)} for thread "
                         f"{threading.current_thread().name}, "
                         f"call sequence: {call_seq(latest=1, depth=2)}"
@@ -746,7 +746,7 @@ class SELock:
                     f"{threading.current_thread().name} raising "
                     "AttemptedReleaseByExclusiveWaiter because the entry found for "
                     "that thread was still waiting for exclusive control of the lock. "
-                    f"Request call sequence: {call_seq(latest=2, depth=2)}"
+                    f"Request call sequence: {call_seq(latest=1, depth=2)}"
                 )
                 self.logger.error(error_msg)
 
@@ -761,7 +761,7 @@ class SELock:
                     f"{threading.current_thread().name} raising "
                     "AttemptedReleaseBySharedWaiter because the entry found for that "
                     "thread was still waiting for shared control of the lock. "
-                    f"Request call sequence: {call_seq(latest=2, depth=2)}"
+                    f"Request call sequence: {call_seq(latest=1, depth=2)}"
                 )
                 self.logger.error(error_msg)
 
@@ -779,7 +779,7 @@ class SELock:
                     if self.debug_logging_enabled:
                         self.logger.debug(
                             "SELock release request continues "
-                            "exclusive control with reduced recursion depth of "
+                            "exclusive control with recursion depth reduced to "
                             f"{abs(self.owner_count)} for thread "
                             f"{threading.current_thread().name}, "
                             f"call sequence: {call_seq(latest=1, depth=2)}"
