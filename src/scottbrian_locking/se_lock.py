@@ -175,6 +175,12 @@ class SELockOwnerNotAlive(SELockError):
     pass
 
 
+class SELockOwnerDeadlockWithSelf(SELockError):
+    """SELock exception for lock owner deadlocked with self."""
+
+    pass
+
+
 ########################################################################
 # SELockObtainMode
 ########################################################################
@@ -401,6 +407,8 @@ class SELock:
                     )
                 return
 
+            # self._check_for_deadlock(req_type=SELock._ReqType.Exclusive)
+
             # lock not free, bump wait count while se_lock_lock held
             self.excl_wait_count += 1
 
@@ -410,6 +418,41 @@ class SELock:
             req_type=SELock._ReqType.Exclusive,
             timeout=timeout,
         )
+
+    ####################################################################
+    # _check_for_deadlock
+    ####################################################################
+    def _check_for_deadlock(self, req_type: _ReqType) -> None:
+        """Method to raise error if deadlock detected.
+
+        Args:
+            req_type: req_type: type of lock request
+
+        Raises:
+            SELockOwnerDeadlockWithSelf: The new request already owns
+                the SELock and must not wait.
+
+        Notes:
+            1) The se_lock_lock must be held when calling this method
+
+        """
+        # we only need to check the entries up to the last entry which
+        # is where the new request is queued
+        this_thread = threading.current_thread()
+        for idx in range(len(self.owner_wait_q) - 1):
+            if self.owner_wait_q[idx].thread is this_thread:
+                # remove the new request from the queue
+                self.owner_wait_q.pop(-1)
+                error_msg = (
+                    f"{req_type} for thread {this_thread.name} "
+                    "raising SELockOwnerDeadlockWithSelf because that "
+                    "thread already owns the lock it is about to wait for "
+                    "and will thus never release the lock and will remain deadlocked. "
+                    f"Request call sequence: {call_seq(latest=2, depth=2)}"
+                )
+                self.logger.error(error_msg)
+
+                raise SELockOwnerDeadlockWithSelf(error_msg)
 
     ####################################################################
     # obtain_excl
@@ -561,6 +604,7 @@ class SELock:
         Args:
             wait_event: event to wait on that will be set by the current
                 owner upon lock release
+            req_type: type of lock request
             timeout: number of seconds that the request is allowed to
                        wait for the lock before an error is raised
 
