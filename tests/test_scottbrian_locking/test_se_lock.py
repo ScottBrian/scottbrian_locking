@@ -60,20 +60,26 @@ class ErrorTstSELock(Exception):
     pass
 
 
+class BadRequestStyleArg(ErrorTstSELock):
+    """BadRequestStyleArg exception class."""
+
+    pass
+
+
 class InvalidRouteNum(ErrorTstSELock):
     """InvalidRouteNum exception class."""
 
     pass
 
 
-class InvalidModeNum(ErrorTstSELock):
-    """InvalidModeNum exception class."""
+class InvalidRequestType(ErrorTstSELock):
+    """The request is not valid."""
 
     pass
 
 
-class BadRequestStyleArg(ErrorTstSELock):
-    """BadRequestStyleArg exception class."""
+class InvalidModeNum(ErrorTstSELock):
+    """InvalidModeNum exception class."""
 
     pass
 
@@ -498,7 +504,7 @@ class TestSELockErrors:
         a_lock = SELock()
 
         a_lock.logger.setLevel(logging.ERROR)
-        self.debug_logging_enabled = False
+        # self.debug_logging_enabled = False
 
         log_ver = LogVer(log_name="scottbrian_locking.se_lock")
 
@@ -530,6 +536,7 @@ class TestSELockErrors:
             #     logger.error(f"joining {idx=}, {len(a_lock.owner_index)=}")
             item.join()
 
+        a_lock.logger.setLevel(logging.DEBUG)
         ################################################################
         # check log results
         ################################################################
@@ -658,7 +665,7 @@ class TestSELockErrors:
             f"{threading.current_thread().name} "
             "raising SELockOwnerNotAlive while waiting for a lock because "
             f"the lock owner thread {f1_thread_str} "
-            " is not alive and will thus never release the lock. "
+            "is not alive and will thus never release the lock. "
             "Request call sequence: python.py::pytest_pyfunc_call:[0-9]+ -> "
             "test_se_lock.py::TestSELockErrors."
             "test_se_lock_release_owner_not_alive:[0-9]+"
@@ -2801,23 +2808,29 @@ class TestSELock:
     ####################################################################
     # test_se_lock_multi_thread_combos
     ####################################################################
-    lock_requests = it.product(lock_request_list, repeat=6)
+    lock_requests1 = it.product(lock_request_list, repeat=4)
+    lock_requests2 = it.product(lock_request_list, repeat=3)
+    lock_requests3 = it.product(lock_request_list, repeat=3)
 
-    @pytest.mark.parametrize("app1_requests_arg", lock_requests)
+    @pytest.mark.parametrize("app1_requests_arg", lock_requests1)
+    @pytest.mark.parametrize("app2_requests_arg", lock_requests2)
+    @pytest.mark.parametrize("app3_requests_arg", lock_requests3)
     def test_se_lock_multi_thread_combos(
         self,
         app1_requests_arg: tuple[SELock.ReqType],
+        app2_requests_arg: tuple[SELock.ReqType],
+        app3_requests_arg: tuple[SELock.ReqType],
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Method to test multi threaded se_lock excl and share combos.
 
         Args:
             app1_requests_arg: list of lock requests for f1
+            app2_requests_arg: list of lock requests for f2
 
         """
-        num_groups = 4
 
-        def f1(
+        def app_thread(
             request_list: tuple[SELock.ReqType],
         ) -> None:
             """Function to get the lock and wait.
@@ -2826,345 +2839,115 @@ class TestSELock:
                 request_list: list of lock requests for f_rtn
 
             """
-            # owner_count = 0
-            # for lock_req in request_list:
-            #     if lock_req.Exclusive:
-            #         if owner_count == 0:
-            #             a_lock.obtain_excl()
-            #             owner_count = -1
-            #         else:
-            #             @pytest.raises()
-            #     elif lock_req.Share:
-
-            def f1_verify() -> None:
-                """Verify the thread item contains expected info."""
-                for f1_item in thread_event_list:
-                    if f1_item.req_num == req_num:
-                        assert f1_item.thread is threading.current_thread()
-                        assert f1_item.mode == mode
-                        assert f1_item.lock_obtained is False
-                        f1_item.lock_obtained = True
-                        break
-
-            if req_num < num_initial_owners:
-                immediate_grant = True
-            else:
-                immediate_grant = False
-
-            if mode == SELock._Mode.SHARE:
-                req_type_insert = "share"
-                grant_type_insert = "shared"
-                obtain_seq_insert = "Share"
-            else:
-                req_type_insert = "exclusive"
-                grant_type_insert = "exclusive"
-                obtain_seq_insert = "Excl"
-
-            f1_esc_thread_name = re.escape(f"{threading.current_thread().name}")
-
-            if use_context == ContextArg.NoContext:
-                f1_obtain_call_seq = (
-                    "threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f1:[0-9]+"
-                )
-                f1_release_call_seq = f1_obtain_call_seq
-            elif use_context == ContextArg.ContextExclShare:
-                f1_obtain_call_seq = (
-                    "test_se_lock.py::f1:[0-9]+ "
-                    f"-> se_lock.py::SELock{obtain_seq_insert}.__enter__:[0-9]+"
-                )
-                f1_release_call_seq = (
-                    "test_se_lock.py::f1:[0-9]+ "
-                    f"-> se_lock.py::SELock{obtain_seq_insert}.__exit__:[0-9]+"
-                )
-            else:
-                f1_obtain_call_seq = (
-                    "test_se_lock.py::f1:[0-9]+ "
-                    "-> se_lock.py::SELockObtain.__enter__:[0-9]+"
-                )
-                f1_release_call_seq = (
-                    "test_se_lock.py::f1:[0-9]+ "
-                    f"-> se_lock.py::SELockObtain.__exit__:[0-9]+"
-                )
-
-            if req_num < num_initial_owners:
-                immediate_grant = True
-                f1_obtain_pattern = (
-                    f"SELock {req_type_insert} obtain request granted immediate "
-                    f"{grant_type_insert} control to thread {f1_esc_thread_name}, "
-                    f"call sequence: {f1_obtain_call_seq}"
-                )
-            else:
-                immediate_grant = False
-                f1_obtain_pattern = (
-                    f"SELock {req_type_insert} obtain request for thread "
-                    f"{f1_esc_thread_name} waiting for SELock, call sequence: "
-                    f"{f1_obtain_call_seq}"
-                )
-
-            log_ver.add_pattern(pattern=f1_obtain_pattern)
-
-            f1_release_pattern = (
-                f"SELock release request removed {grant_type_insert} control for "
-                f"thread {f1_esc_thread_name}, "
-                f"call sequence: {f1_release_call_seq}"
+            thread_esc_name = re.escape(f"{threading.current_thread().name}")
+            f1_call_seq = (
+                "threading.py::Thread.run:[0-9]+ -> test_se_lock.py::app_thread:[0-9]+"
             )
-            log_ver.add_pattern(pattern=f1_release_pattern)
+            ml_event0.set()
+            ml_event1.wait()
 
-            ############################################################
-            # request the lock
-            ############################################################
-            if use_context == ContextArg.NoContext:
-                if mode == SELock._Mode.SHARE:
-                    a_lock.obtain_share()
+            lock_owner_count = 0
+            for idx, request in enumerate(request_list):
+                logger.debug(f"f1 doing request {idx}: {request}")
+                if request == SELock.ReqType.Exclusive:
+                    if lock_owner_count == 0:
+                        a_lock.obtain_excl()
+                        lock_owner_count = -1
+                    else:
+                        f1_error_msg = (
+                            f"{request} for thread {thread_esc_name} "
+                            "raising SELockAlreadyOwnedError because the requestor "
+                            "already owns the lock. "
+                            f"Request call sequence: {f1_call_seq}"
+                        )
+                        with pytest.raises(SELockAlreadyOwnedError, match=f1_error_msg):
+                            a_lock.obtain_excl()
+
+                elif request == SELock.ReqType.ExclusiveRecursive:
+                    if lock_owner_count <= 0:
+                        a_lock.obtain_excl_recursive()
+                        lock_owner_count -= 1
+                    else:
+                        f1_error_msg = (
+                            f"{request} for thread {thread_esc_name} "
+                            "raising SELockAlreadyOwnedError because the requestor "
+                            "already owns the lock. "
+                            f"Request call sequence: {f1_call_seq}"
+                        )
+                        with pytest.raises(SELockAlreadyOwnedError, match=f1_error_msg):
+                            a_lock.obtain_excl_recursive()
+
+                elif request == SELock.ReqType.Share:
+                    if lock_owner_count == 0:
+                        a_lock.obtain_share()
+                        lock_owner_count = 1
+                    else:
+                        f1_error_msg = (
+                            f"{request} for thread {thread_esc_name} "
+                            "raising SELockAlreadyOwnedError because the requestor "
+                            "already owns the lock. "
+                            f"Request call sequence: {f1_call_seq}"
+                        )
+                        with pytest.raises(SELockAlreadyOwnedError, match=f1_error_msg):
+                            a_lock.obtain_share()
+
+                elif request == SELock.ReqType.Release:
+                    if lock_owner_count == 1:
+                        a_lock.release()
+                        lock_owner_count = 0
+                    elif lock_owner_count < 0:
+                        a_lock.release()
+                        lock_owner_count += 1
+                    else:
+                        f1_error_msg = (
+                            f"{request} for thread {thread_esc_name} raising "
+                            "AttemptedReleaseOfUnownedLock because an entry on the "
+                            "owner-waiter queue was not found for that thread. "
+                            f"Request call sequence: {f1_call_seq}"
+                        )
+                        with pytest.raises(
+                            AttemptedReleaseOfUnownedLock, match=f1_error_msg
+                        ):
+                            a_lock.release()
+
                 else:
-                    a_lock.obtain_excl()
-                f1_verify()
+                    raise InvalidRequestType(f"request {request} not valid")
 
-                a_event.wait()
+            while lock_owner_count:
                 a_lock.release()
-
-            elif use_context == ContextArg.ContextExclShare:
-                if mode == SELock._Mode.SHARE:
-                    with SELockShare(a_lock):
-                        f1_verify()
-                        a_event.wait()
+                if lock_owner_count == 1:
+                    lock_owner_count = 0
                 else:
-                    with SELockExcl(a_lock):
-                        f1_verify()
-                        a_event.wait()
-
-            else:
-                if mode == SELock._Mode.SHARE:
-                    with SELockObtain(a_lock, obtain_mode=SELockObtainMode.Share):
-                        f1_verify()
-                        a_event.wait()
-                else:
-                    with SELockObtain(a_lock, obtain_mode=SELockObtainMode.Exclusive):
-                        f1_verify()
-                        a_event.wait()
-
-            for item in f1_release_grant_list:
-                if item.mode == SELock._Mode.SHARE:
-                    rel_grant_mode = "shared"
-                else:
-                    rel_grant_mode = "exclusive"
-
-                granted_esc_thread = re.escape(f"{item.thread}")
-
-                f1_release_grant_pattern = (
-                    f"SELock release request for thread "
-                    f"{f1_esc_thread_name} "
-                    f"granted {rel_grant_mode} control to waiting "
-                    f"thread {granted_esc_thread}, "
-                    f"call sequence: {f1_release_call_seq}"
-                )
-                log_ver.add_pattern(pattern=f1_release_grant_pattern)
+                    lock_owner_count += 1
 
         ################################################################
         # mainline
         ################################################################
-        log_ver = LogVer(log_name="scottbrian_locking.se_lock")
-
-        @dataclass
-        class ReleaseGrant:
-            thread: threading.Thread
-            mode: SELock._Mode
-
-        @dataclass
-        class ThreadEvent:
-            thread: threading.Thread
-            event: threading.Event
-            mode: SELock._Mode
-            req_num: int
-            lock_obtained: bool
-            release_grant_list: list[ReleaseGrant]
-
         a_lock = SELock()
 
-        thread_event_list = []
+        ml_event0 = threading.Event()
+        ml_event1 = threading.Event()
 
-        request_number = -1
-        num_requests_list = [
-            num_share_requests1_arg,
-            num_excl_requests1_arg,
-            num_share_requests2_arg,
-            num_excl_requests2_arg,
-        ]
+        f1_thread = threading.Thread(target=app_thread, args=(app1_requests_arg,))
+        f1_thread.start()
+        ml_event0.wait()
+        ml_event0.clear()
 
-        num_initial_owners = 0
-        initial_owner_mode: Optional[SELock._Mode] = None
-        if num_share_requests1_arg:
-            num_initial_owners = num_share_requests1_arg
-            initial_owner_mode = SELock._Mode.SHARE
-            if num_excl_requests1_arg == 0:
-                num_initial_owners += num_share_requests2_arg
-        elif num_excl_requests1_arg:
-            num_initial_owners = 1
-            initial_owner_mode = SELock._Mode.EXCL
-        elif num_share_requests2_arg:
-            num_initial_owners = num_share_requests2_arg
-            initial_owner_mode = SELock._Mode.SHARE
-        elif num_excl_requests2_arg:
-            num_initial_owners = 1
-            initial_owner_mode = SELock._Mode.EXCL
+        f2_thread = threading.Thread(target=app_thread, args=(app2_requests_arg,))
+        f2_thread.start()
+        ml_event0.wait()
+        ml_event0.clear()
 
-        for shr_excl in range(num_groups):
-            num_requests = num_requests_list[shr_excl]
-            for idx in range(num_requests):
-                request_number += 1
-                a_event1 = threading.Event()
-                if shr_excl == 0 or shr_excl == 2:
-                    req_mode = SELock._Mode.SHARE
-                else:
-                    req_mode = SELock._Mode.EXCL
+        f3_thread = threading.Thread(target=app_thread, args=(app3_requests_arg,))
+        f3_thread.start()
+        ml_event0.wait()
+        ml_event0.clear()
 
-                if use_context_arg == 0:
-                    use_context = ContextArg.NoContext
-                elif use_context_arg == 1:
-                    use_context = ContextArg.ContextExclShare
-                elif use_context_arg == 2:
-                    use_context = ContextArg.ContextObtain
-                else:
-                    if request_number % 3 == 0:
-                        use_context = ContextArg.NoContext
-                    elif request_number % 3 == 1:
-                        use_context = ContextArg.ContextExclShare
-                    else:
-                        use_context = ContextArg.ContextObtain
+        ml_event1.set()
 
-                release_grant_list = []
-
-                a_thread = threading.Thread(
-                    target=f1,
-                    args=(
-                        a_event1,
-                        req_mode,
-                        request_number,
-                        use_context,
-                        release_grant_list,
-                    ),
-                )
-                # save for verification and release
-                thread_event_list.append(
-                    ThreadEvent(
-                        thread=a_thread,
-                        event=a_event1,
-                        mode=req_mode,
-                        req_num=request_number,
-                        lock_obtained=False,
-                        release_grant_list=release_grant_list,
-                    )
-                )
-
-                a_thread.start()
-
-                # make sure the request has been queued
-                while (not a_lock.owner_wait_q) or (
-                    not a_lock.owner_wait_q[-1].thread is a_thread
-                ):
-                    time.sleep(0.1)
-                # logger.debug(f'shr_excl = {shr_excl}, '
-                #              f'idx = {idx}, '
-                #              f'num_requests_made = {request_number}, '
-                #              f'len(a_lock) = {len(a_lock)}')
-                assert len(a_lock) == request_number + 1
-
-                # verify
-                assert a_lock.owner_wait_q[-1].thread is a_thread
-                assert not a_lock.owner_wait_q[-1].event.is_set()
-
-        work_shr1 = num_share_requests1_arg
-        work_excl1 = num_excl_requests1_arg
-        work_shr2 = num_share_requests2_arg
-        work_excl2 = num_excl_requests2_arg
-        while thread_event_list:
-            exp_num_owners = 0
-            if work_shr1:
-                exp_num_owners = work_shr1
-                if work_excl1 == 0:
-                    exp_num_owners += work_shr2
-            elif work_excl1:
-                exp_num_owners = 1
-            elif work_shr2:
-                exp_num_owners = work_shr2
-            elif work_excl2:
-                exp_num_owners = 1
-
-            while True:
-                exp_num_owners_found = 0
-                for idx in range(exp_num_owners):  # wait for next owners
-                    if thread_event_list[idx].lock_obtained:
-                        exp_num_owners_found += 1
-                    else:
-                        break
-                if exp_num_owners_found == exp_num_owners:
-                    break
-                time.sleep(0.0001)
-
-            for idx, thread_event in enumerate(thread_event_list):
-                assert thread_event.thread == thread_event_list[idx].thread
-                assert thread_event.thread == a_lock.owner_wait_q[idx].thread
-                assert thread_event.mode == thread_event_list[idx].mode
-                assert thread_event.mode == a_lock.owner_wait_q[idx].mode
-
-                if idx + 1 <= num_initial_owners:
-                    # we expect the event to not have been posted
-                    assert not a_lock.owner_wait_q[idx].event.is_set()
-                    assert thread_event.mode == initial_owner_mode
-                    assert thread_event.lock_obtained is True
-                elif idx + 1 <= exp_num_owners:
-                    assert a_lock.owner_wait_q[idx].event.is_set()
-                    assert thread_event.lock_obtained is True
-                else:
-                    assert not a_lock.owner_wait_q[idx].event.is_set()
-                    assert thread_event.lock_obtained is False
-
-            release_position = min(release_position_arg, exp_num_owners - 1)
-
-            if release_position == 0 and 1 < len(thread_event_list):
-                if thread_event_list[1].mode == SELock._Mode.EXCL:
-                    thread_event_list[release_position].release_grant_list.append(
-                        ReleaseGrant(
-                            thread=thread_event_list[1].thread, mode=SELock._Mode.EXCL
-                        )
-                    )
-                else:
-                    if thread_event_list[0].mode == SELock._Mode.EXCL:
-                        for rel_idx in range(1, len(thread_event_list)):
-                            if thread_event_list[rel_idx].mode == SELock._Mode.EXCL:
-                                break
-                            thread_event_list[
-                                release_position
-                            ].release_grant_list.append(
-                                ReleaseGrant(
-                                    thread=thread_event_list[rel_idx].thread,
-                                    mode=SELock._Mode.SHARE,
-                                )
-                            )
-
-            thread_event = thread_event_list.pop(release_position)
-
-            thread_event.event.set()  # tell owner to release and return
-            thread_event.thread.join()  # ensure release is complete
-            num_initial_owners -= 1
-            request_number -= 1
-            if work_shr1:
-                work_shr1 -= 1
-            elif work_excl1:
-                work_excl1 -= 1
-            elif work_shr2:
-                work_shr2 -= 1
-            elif work_excl2:
-                work_excl2 -= 1
-
-            assert len(a_lock) == request_number + 1
-
-        ################################################################
-        # check log results
-        ################################################################
-        match_results = log_ver.get_match_results(caplog=caplog)
-        log_ver.print_match_results(match_results, print_matched=True)
-        log_ver.verify_match_results(match_results)
+        f1_thread.join()
+        f2_thread.join()
+        f3_thread.join()
 
 
 ########################################################################
