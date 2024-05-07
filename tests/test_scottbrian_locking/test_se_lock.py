@@ -38,6 +38,7 @@ from scottbrian_locking.se_lock import (
     AttemptedReleaseOfUnownedLock,
     LockVerifyError,
     SELockInputError,
+    SELockAlreadyOwnedError,
     SELockObtainTimeout,
     SELockOwnerNotAlive,
     SELockObtainMode,
@@ -83,6 +84,14 @@ class ContextArg(Enum):
     NoContext = auto()
     ContextExclShare = auto()
     ContextObtain = auto()
+
+
+lock_request_list = (
+    SELock.ReqType.Exclusive,
+    SELock.ReqType.ExclusiveRecursive,
+    SELock.ReqType.Share,
+    SELock.ReqType.Release,
+)
 
 
 ####################################################################
@@ -299,6 +308,238 @@ class TestSELockErrors:
         log_ver.print_match_results(match_results, print_matched=True)
         log_ver.verify_match_results(match_results)
 
+    ####################################################################
+    # test_se_lock_second_obtain
+    ####################################################################
+    @pytest.mark.parametrize(
+        "first_request_arg",
+        [
+            SELock.ReqType.Exclusive,
+            SELock.ReqType.ExclusiveRecursive,
+            SELock.ReqType.Share,
+        ],
+    )
+    @pytest.mark.parametrize(
+        "second_request_arg",
+        [
+            SELock.ReqType.Exclusive,
+            SELock.ReqType.ExclusiveRecursive,
+            SELock.ReqType.Share,
+        ],
+    )
+    def test_se_lock_second_obtain(
+        self,
+        first_request_arg: SELock.ReqType,
+        second_request_arg: SELock.ReqType,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Test that second obtain request fails.
+
+        Args:
+            first_request_arg: first obtain request
+            second_request_arg: second obtain request
+            caplog: pytest.LogCaptureFixture
+
+        """
+
+        ################################################################
+        # mainline
+        ################################################################
+        if (
+            second_request_arg == SELock.ReqType.ExclusiveRecursive
+            and first_request_arg != SELock.ReqType.Share
+        ):
+            return
+
+        log_ver = LogVer(log_name="scottbrian_locking.se_lock")
+
+        a_lock = SELock()
+
+        a_lock.verify_lock(exp_q=[], exp_owner_count=0, exp_excl_wait_count=0)
+
+        ml_thread = threading.current_thread()
+        ml_esc_thread_name = re.escape(ml_thread.name)
+
+        ml_call_seq = (
+            "python.py::pytest_pyfunc_call:[0-9]+ -> "
+            "test_se_lock.py::TestSELockErrors.test_se_lock_second_obtain:[0-9]+"
+        )
+
+        if first_request_arg == SELock.ReqType.Exclusive:
+            ml_obtain_pattern = (
+                f"{first_request_arg} granted immediate exclusive "
+                f"control to thread {ml_esc_thread_name}, "
+                f"call sequence: {ml_call_seq}"
+            )
+            a_lock.obtain_excl()
+            verify_mode = SELockObtainMode.Exclusive
+            exp_owner_count = -1
+            release_str = "exclusive"
+        elif first_request_arg == SELock.ReqType.ExclusiveRecursive:
+            ml_obtain_pattern = (
+                f"{first_request_arg} granted "
+                "immediate exclusive control with recursion depth of 1 for "
+                f"thread {ml_esc_thread_name}, "
+                f"call sequence: {ml_call_seq}"
+            )
+            a_lock.obtain_excl_recursive()
+            verify_mode = SELockObtainMode.Exclusive
+            exp_owner_count = -1
+            release_str = "exclusive"
+        else:
+            ml_obtain_pattern = (
+                f"{first_request_arg} granted immediate shared "
+                f"control to thread {ml_esc_thread_name}, "
+                f"call sequence: {ml_call_seq}"
+            )
+            a_lock.obtain_share()
+            verify_mode = SELockObtainMode.Share
+            exp_owner_count = 1
+            release_str = "shared"
+        log_ver.add_pattern(pattern=ml_obtain_pattern)
+
+        a_lock.verify_lock(
+            exp_q=[
+                LockItem(
+                    mode=verify_mode,
+                    event_flag=False,
+                    thread=ml_thread,
+                ),
+            ],
+            exp_owner_count=exp_owner_count,
+            exp_excl_wait_count=0,
+        )
+
+        ml_error_msg = (
+            f"{second_request_arg} for thread {ml_esc_thread_name} "
+            "raising SELockAlreadyOwnedError because the requestor "
+            f"already owns the lock. Request call sequence: {ml_call_seq}"
+        )
+
+        log_ver.add_pattern(pattern=ml_error_msg, level=logging.ERROR)
+        with pytest.raises(SELockAlreadyOwnedError, match=ml_error_msg):
+            if second_request_arg == SELock.ReqType.Exclusive:
+                a_lock.obtain_excl()
+            elif second_request_arg == SELock.ReqType.ExclusiveRecursive:
+                a_lock.obtain_excl_recursive()
+            else:
+                a_lock.obtain_share()
+
+        a_lock.verify_lock(
+            exp_q=[
+                LockItem(
+                    mode=verify_mode,
+                    event_flag=False,
+                    thread=ml_thread,
+                ),
+            ],
+            exp_owner_count=exp_owner_count,
+            exp_excl_wait_count=0,
+        )
+        ml_release_pattern = (
+            f"SELock release request removed {release_str} control for thread "
+            f"{ml_esc_thread_name}, "
+            f"call sequence: {ml_call_seq}"
+        )
+        log_ver.add_pattern(pattern=ml_release_pattern)
+        a_lock.release()
+
+        a_lock.verify_lock(exp_q=[], exp_owner_count=0, exp_excl_wait_count=0)
+
+        ################################################################
+        # check log results
+        ################################################################
+        match_results = log_ver.get_match_results(caplog=caplog)
+        log_ver.print_match_results(match_results, print_matched=True)
+        log_ver.verify_match_results(match_results)
+
+    ####################################################################
+    # test_se_lock_multi_share
+    ####################################################################
+    def test_se_lock_multi_share(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Test multiple share requests.
+
+        Args:
+            caplog: pytest.LogCaptureFixture
+
+        """
+
+        def f1(do_second_share: bool) -> None:
+            """Function that obtains lock and exits still holding it.
+
+            Args:
+                do_second_share: If True, get lock again
+            """
+            a_lock.obtain_share()
+
+            if do_second_share:
+                f1_esc_thread_name = re.escape(f"{threading.current_thread().name}")
+                f1_error_msg = (
+                    f"SELock share obtain request for thread {f1_esc_thread_name} "
+                    "raising SELockAlreadyOwnedError because the requestor "
+                    f"already owns the lock. Request call sequence: "
+                    "threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f1:[0-9]+"
+                )
+
+                log_ver.add_pattern(pattern=f1_error_msg, level=logging.ERROR)
+                with pytest.raises(SELockAlreadyOwnedError, match=f1_error_msg):
+                    a_lock.obtain_share()
+
+            ml_event1.set()
+            ml_event2.wait()
+            a_lock.release()
+
+        ################################################################
+        # mainline
+        ################################################################
+        a_lock = SELock()
+
+        a_lock.logger.setLevel(logging.ERROR)
+        self.debug_logging_enabled = False
+
+        log_ver = LogVer(log_name="scottbrian_locking.se_lock")
+
+        a_lock.verify_lock(exp_q=[], exp_owner_count=0, exp_excl_wait_count=0)
+
+        ml_event1 = threading.Event()
+        ml_event2 = threading.Event()
+
+        num_reqs = 100000
+        join_list = []
+        for idx in range(num_reqs):
+            # if idx % 1000 == 0:
+            #     logger.error(f"starting {idx=}, {len(a_lock.owner_index)=}")
+            if idx == num_reqs - 1:
+                second_share = True
+            else:
+                second_share = False
+            f1_thread = threading.Thread(target=f1, args=(second_share,))
+            join_list.append(f1_thread)
+            f1_thread.start()
+            ml_event1.wait()
+            ml_event1.clear()
+
+        assert len(a_lock.owner_wait_q) == num_reqs
+
+        ml_event2.set()
+        for idx, item in enumerate(join_list):
+            # if idx % 1000 == 0:
+            #     logger.error(f"joining {idx=}, {len(a_lock.owner_index)=}")
+            item.join()
+
+        ################################################################
+        # check log results
+        ################################################################
+        match_results = log_ver.get_match_results(caplog=caplog)
+        log_ver.print_match_results(match_results, print_matched=True)
+        # log_ver.verify_match_results(match_results)
+
+    ####################################################################
+    # test_se_lock_release_unowned_loc
+    ####################################################################
     def test_se_lock_release_unowned_lock(
         self,
         caplog: pytest.LogCaptureFixture,
@@ -339,6 +580,9 @@ class TestSELockErrors:
         log_ver.print_match_results(match_results, print_matched=True)
         log_ver.verify_match_results(match_results)
 
+    ####################################################################
+    # test_se_lock_release_owner_not_alive
+    ####################################################################
     def test_se_lock_release_owner_not_alive(
         self,
         caplog: pytest.LogCaptureFixture,
@@ -454,6 +698,9 @@ class TestSELockErrors:
         log_ver.print_match_results(match_results, print_matched=True)
         log_ver.verify_match_results(match_results)
 
+    ####################################################################
+    # test_se_lock_release_by_exclusive_waiter
+    ####################################################################
     def test_se_lock_release_by_exclusive_waiter(
         self,
         caplog: pytest.LogCaptureFixture,
@@ -725,6 +972,9 @@ class TestSELockErrors:
         log_ver.print_match_results(match_results, print_matched=True)
         log_ver.verify_match_results(match_results)
 
+    ####################################################################
+    # test_se_lock_release_by_shared_waite
+    ####################################################################
     def test_se_lock_release_by_shared_waiter(
         self,
         caplog: pytest.LogCaptureFixture,
@@ -1014,7 +1264,7 @@ class TestSELockBasic:
     """Class TestSELockBasic."""
 
     ####################################################################
-    # repr
+    # test_se_lock_repr
     ####################################################################
     def test_se_lock_repr(self) -> None:
         """Test the repr of SELock."""
@@ -1025,7 +1275,7 @@ class TestSELockBasic:
         assert repr(a_se_lock) == expected_repr_str
 
     ####################################################################
-    # repr
+    # test_se_lock_obtain_excl
     ####################################################################
     def test_se_lock_obtain_excl(
         self,
@@ -1337,6 +1587,9 @@ class TestSELockBasic:
         log_ver.print_match_results(match_results, print_matched=True)
         log_ver.verify_match_results(match_results)
 
+    ####################################################################
+    # test_se_lock_release_by_excl_owner
+    ####################################################################
     def test_se_lock_release_by_excl_owner(
         self,
         caplog: pytest.LogCaptureFixture,
@@ -2548,18 +2801,12 @@ class TestSELock:
     ####################################################################
     # test_se_lock_multi_thread_combos
     ####################################################################
-    lock_request_list = (
-        SELock._ReqType.Exclusive,
-        SELock._ReqType.ExclusiveRecursive,
-        SELock._ReqType.Share,
-        SELock._ReqType.Release,
-    )
     lock_requests = it.product(lock_request_list, repeat=6)
 
     @pytest.mark.parametrize("app1_requests_arg", lock_requests)
     def test_se_lock_multi_thread_combos(
         self,
-        app1_requests_arg: tuple[SELock._ReqType],
+        app1_requests_arg: tuple[SELock.ReqType],
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Method to test multi threaded se_lock excl and share combos.
@@ -2571,7 +2818,7 @@ class TestSELock:
         num_groups = 4
 
         def f1(
-            request_list: tuple[SELock._ReqType],
+            request_list: tuple[SELock.ReqType],
         ) -> None:
             """Function to get the lock and wait.
 
@@ -2579,17 +2826,15 @@ class TestSELock:
                 request_list: list of lock requests for f_rtn
 
             """
-            owner_count = 0
-            for lock_req in request_list:
-                if lock_req.Exclusive:
-                    if owner_count == 0:
-                        a_lock.obtain_excl()
-                        owner_count = -1
-                    else:
-                        @pytest.raises()
-                elif lock_req.Share:
-
-
+            # owner_count = 0
+            # for lock_req in request_list:
+            #     if lock_req.Exclusive:
+            #         if owner_count == 0:
+            #             a_lock.obtain_excl()
+            #             owner_count = -1
+            #         else:
+            #             @pytest.raises()
+            #     elif lock_req.Share:
 
             def f1_verify() -> None:
                 """Verify the thread item contains expected info."""
@@ -2928,6 +3173,9 @@ class TestSELock:
 class TestSELockDocstrings:
     """Class TestSELockDocstrings."""
 
+    ####################################################################
+    # test_se_lock_with_example_1
+    ####################################################################
     def test_se_lock_with_example_1(self) -> None:
         """Method test_se_lock_with_example_1."""
         flowers("Example of SELock for README:")

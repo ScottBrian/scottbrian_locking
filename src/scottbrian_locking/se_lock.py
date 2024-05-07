@@ -100,6 +100,7 @@ lock obtained shared
 ########################################################################
 # Standard Library
 ########################################################################
+from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum, StrEnum, auto
 import logging
@@ -175,7 +176,7 @@ class SELockOwnerNotAlive(SELockError):
     pass
 
 
-class SELockOwnerDeadlockWithSelf(SELockError):
+class SELockAlreadyOwnedError(SELockError):
     """SELock exception for lock owner deadlocked with self."""
 
     pass
@@ -218,7 +219,7 @@ class SELock:
 
     """
 
-    class _ReqType(StrEnum):
+    class ReqType(StrEnum):
         """Enum class for request type."""
 
         Exclusive = "SELock exclusive obtain request"
@@ -235,7 +236,7 @@ class SELock:
     class _LockOwnerWaiter(NamedTuple):
         """NamedTuple for the lock request queue item."""
 
-        req_type: "SELock._ReqType"
+        req_type: "SELock.ReqType"
         mode: "SELock._Mode"
         event: threading.Event
         thread: threading.Thread
@@ -281,6 +282,8 @@ class SELock:
         # be posted and the requester will then be given back control as
         # the new owner.
         self.owner_wait_q: list[SELock._LockOwnerWaiter] = []
+
+        self.owner_index: dict[str, int] = defaultdict(int)
 
         # The owner count is used to indicate whether the lock is
         # currently owned, and the mode. A value of zero indicates that
@@ -390,12 +393,16 @@ class SELock:
             wait_event = threading.Event()
             self.owner_wait_q.append(
                 SELock._LockOwnerWaiter(
-                    req_type=SELock._ReqType.Exclusive,
+                    req_type=SELock.ReqType.Exclusive,
                     mode=SELock._Mode.EXCL,
                     event=wait_event,
                     thread=threading.current_thread(),
                 )
             )
+            thread_name = threading.current_thread().name
+            self.owner_index[thread_name] += 1
+            if self.owner_index[thread_name] > 1:
+                self._check_for_already_owned_error(req_type=SELock.ReqType.Exclusive)
             if self.owner_count == 0:  # if lock is free
                 self.owner_count = -1  # indicate now owned exclusive
 
@@ -407,7 +414,7 @@ class SELock:
                     )
                 return
 
-            # self._check_for_deadlock(req_type=SELock._ReqType.Exclusive)
+            # self._check_for_already_owned_error(req_type=SELock.ReqType.Exclusive)
 
             # lock not free, bump wait count while se_lock_lock held
             self.excl_wait_count += 1
@@ -415,44 +422,50 @@ class SELock:
         # we are in the queue, wait for lock to be granted to us
         self._wait_for_lock(
             wait_event=wait_event,
-            req_type=SELock._ReqType.Exclusive,
+            req_type=SELock.ReqType.Exclusive,
             timeout=timeout,
         )
 
     ####################################################################
-    # _check_for_deadlock
+    # _check_for_already_owned_error
     ####################################################################
-    def _check_for_deadlock(self, req_type: _ReqType) -> None:
+    def _check_for_already_owned_error(self, req_type: ReqType) -> None:
         """Method to raise error if deadlock detected.
 
         Args:
             req_type: req_type: type of lock request
 
         Raises:
-            SELockOwnerDeadlockWithSelf: The new request already owns
+            SELockAlreadyOwnedError: The new request already owns
                 the SELock and must not wait.
 
         Notes:
             1) The se_lock_lock must be held when calling this method
 
         """
-        # we only need to check the entries up to the last entry which
-        # is where the new request is queued
-        this_thread = threading.current_thread()
+        # we need to check all entries except the last which is where
+        # the new request was just queued
+        thread = threading.current_thread()
+        thread_name = thread.name
         for idx in range(len(self.owner_wait_q) - 1):
-            if self.owner_wait_q[idx].thread is this_thread:
-                # remove the new request from the queue
-                self.owner_wait_q.pop(-1)
+            if self.owner_wait_q[idx].thread is thread:
+                # remove the new request from the end of the queue
+                self.owner_wait_q.pop()
+
+                # we know the new count will be non-zero after the
+                # decrement because we call this method when it is
+                # greater than 1 - so, we know a del will not be needed
+                self.owner_index[thread_name] -= 1
+
                 error_msg = (
-                    f"{req_type} for thread {this_thread.name} "
-                    "raising SELockOwnerDeadlockWithSelf because that "
-                    "thread already owns the lock it is about to wait for "
-                    "and will thus never release the lock and will remain deadlocked. "
+                    f"{req_type} for thread {thread_name} "
+                    "raising SELockAlreadyOwnedError because the requestor "
+                    "already owns the lock. "
                     f"Request call sequence: {call_seq(latest=2, depth=2)}"
                 )
                 self.logger.error(error_msg)
 
-                raise SELockOwnerDeadlockWithSelf(error_msg)
+                raise SELockAlreadyOwnedError(error_msg)
 
     ####################################################################
     # obtain_excl
@@ -504,12 +517,18 @@ class SELock:
             wait_event = threading.Event()
             self.owner_wait_q.append(
                 SELock._LockOwnerWaiter(
-                    req_type=SELock._ReqType.ExclusiveRecursive,
+                    req_type=SELock.ReqType.ExclusiveRecursive,
                     mode=SELock._Mode.EXCL,
                     event=wait_event,
                     thread=threading.current_thread(),
                 )
             )
+            thread_name = threading.current_thread().name
+            self.owner_index[thread_name] += 1
+            if self.owner_index[thread_name] > 1:
+                self._check_for_already_owned_error(
+                    req_type=SELock.ReqType.ExclusiveRecursive
+                )
             if self.owner_count == 0:  # if lock is free
                 self.owner_count = -1  # indicate now owned exclusive
 
@@ -522,13 +541,17 @@ class SELock:
                     )
                 return
 
+            # self._check_for_already_owned_error(
+            #     req_type=SELock.ReqType.ExclusiveRecursive
+            # )
+
             # lock not free, bump wait count while se_lock_lock held
             self.excl_wait_count += 1
 
         # we are in the queue, wait for lock to be granted to us
         self._wait_for_lock(
             wait_event=wait_event,
-            req_type=SELock._ReqType.ExclusiveRecursive,
+            req_type=SELock.ReqType.ExclusiveRecursive,
             timeout=timeout,
         )
 
@@ -565,15 +588,21 @@ class SELock:
             wait_event = threading.Event()
             self.owner_wait_q.append(
                 SELock._LockOwnerWaiter(
-                    req_type=SELock._ReqType.Share,
+                    req_type=SELock.ReqType.Share,
                     mode=SELock._Mode.SHARE,
                     event=wait_event,
                     thread=threading.current_thread(),
                 )
             )
+            thread_name = threading.current_thread().name
+            self.owner_index[thread_name] += 1
+            if self.owner_index[thread_name] > 1:
+                self._check_for_already_owned_error(req_type=SELock.ReqType.Share)
+
             # if no exclusive waiters, and lock is free or owned shared
             if self.excl_wait_count == 0 <= self.owner_count:
                 self.owner_count += 1  # bump the share owner count
+
                 if self.debug_logging_enabled:
                     self.logger.debug(
                         f"SELock share obtain request granted immediate shared control "
@@ -585,7 +614,7 @@ class SELock:
         # we are in the queue, wait for lock to be granted to us
         self._wait_for_lock(
             wait_event=wait_event,
-            req_type=SELock._ReqType.Share,
+            req_type=SELock.ReqType.Share,
             timeout=timeout,
         )
 
@@ -596,7 +625,7 @@ class SELock:
     def _wait_for_lock(
         self,
         wait_event: threading.Event,
-        req_type: _ReqType,
+        req_type: ReqType,
         timeout: OptIntFloat,
     ) -> None:
         """Method to wait for the SELock.
@@ -832,6 +861,12 @@ class SELock:
             else:
                 self.owner_count -= 1
             del self.owner_wait_q[owner_waiter_desc.item_idx]
+
+            # we never expect the owner_index to be greater than 1
+            if self.owner_index[threading.current_thread().name] == 1:
+                del self.owner_index[threading.current_thread().name]
+            else:
+                self.owner_index[threading.current_thread().name] -= 1
 
             if self.debug_logging_enabled:
                 if owner_waiter_desc.item_mode == SELock._Mode.EXCL:
