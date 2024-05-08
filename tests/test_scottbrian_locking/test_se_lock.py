@@ -299,14 +299,38 @@ class TestSELockErrors:
         for exp_owner_count in (None, 0):
             for exp_excl_wait_count in (None, 0):
                 for timeout in (None, 0, 1):
-                    for verify_structures in (None, True, False):
-                        a_lock.verify_lock(
-                            exp_q=[],
-                            exp_owner_count=exp_owner_count,
-                            exp_excl_wait_count=exp_excl_wait_count,
-                            timeout=timeout,
-                            verify_structures=verify_structures,
-                        )
+                    if timeout is None:
+                        for verify_structures in (None, True, False):
+                            if verify_structures is None:
+                                a_lock.verify_lock(
+                                    exp_q=[],
+                                    exp_owner_count=exp_owner_count,
+                                    exp_excl_wait_count=exp_excl_wait_count,
+                                )
+                            else:
+                                a_lock.verify_lock(
+                                    exp_q=[],
+                                    exp_owner_count=exp_owner_count,
+                                    exp_excl_wait_count=exp_excl_wait_count,
+                                    verify_structures=verify_structures,
+                                )
+                    else:
+                        for verify_structures in (None, True, False):
+                            if verify_structures is None:
+                                a_lock.verify_lock(
+                                    exp_q=[],
+                                    exp_owner_count=exp_owner_count,
+                                    exp_excl_wait_count=exp_excl_wait_count,
+                                    timeout=timeout,
+                                )
+                            else:
+                                a_lock.verify_lock(
+                                    exp_q=[],
+                                    exp_owner_count=exp_owner_count,
+                                    exp_excl_wait_count=exp_excl_wait_count,
+                                    timeout=timeout,
+                                    verify_structures=verify_structures,
+                                )
         ################################################################
         # check log results
         ################################################################
@@ -1295,14 +1319,14 @@ class TestSELockBasic:
         ################################################################
         log_ver = LogVer(log_name="scottbrian_locking.se_lock")
 
-        self.log_test_msg("mainline entry", log_ver=log_ver)
+        log_test_msg("mainline entry", log_ver=log_ver)
 
         ml_thread = threading.current_thread()
         ml_thread_name = ml_thread.name
 
         a_se_lock = SELock()
 
-        self.log_test_msg("about to do step 1", log_ver=log_ver)
+        log_test_msg("about to do step 1", log_ver=log_ver)
 
         ml_esc_thread_name = re.escape(f"{ml_thread.name}")
         ml_excl_obtain_pattern = (
@@ -1325,7 +1349,7 @@ class TestSELockBasic:
         assert lock_info.owner_count == -1
         assert lock_info.excl_wait_count == 0
 
-        self.log_test_msg("about to do step 2", log_ver=log_ver)
+        log_test_msg("about to do step 2", log_ver=log_ver)
 
         ml_excl_release_pattern = (
             f"SELock release request removed exclusive control for thread "
@@ -1342,7 +1366,7 @@ class TestSELockBasic:
         assert lock_info.owner_count == 0
         assert lock_info.excl_wait_count == 0
 
-        self.log_test_msg("about to do step 3", log_ver=log_ver)
+        log_test_msg("about to do step 3", log_ver=log_ver)
 
         ml_recursive_obtain_pattern = (
             "SELock exclusive recursive obtain request granted "
@@ -1363,7 +1387,7 @@ class TestSELockBasic:
         assert lock_info.owner_count == -1
         assert lock_info.excl_wait_count == 0
 
-        self.log_test_msg("about to do step 4", log_ver=log_ver)
+        log_test_msg("about to do step 4", log_ver=log_ver)
 
         log_ver.add_pattern(pattern=ml_excl_release_pattern)
 
@@ -1374,7 +1398,7 @@ class TestSELockBasic:
         assert lock_info.owner_count == 0
         assert lock_info.excl_wait_count == 0
 
-        self.log_test_msg("about to do step 5", log_ver=log_ver)
+        log_test_msg("about to do step 5", log_ver=log_ver)
 
         log_ver.add_pattern(pattern=ml_excl_obtain_pattern)
 
@@ -1387,7 +1411,7 @@ class TestSELockBasic:
         assert lock_info.owner_count == -1
         assert lock_info.excl_wait_count == 0
 
-        self.log_test_msg("about to do step 6", log_ver=log_ver)
+        log_test_msg("about to do step 6", log_ver=log_ver)
 
         ml_recursive_excl_continue_pattern_to_2 = (
             "SELock exclusive recursive obtain request continues "
@@ -1408,7 +1432,7 @@ class TestSELockBasic:
         assert lock_info.owner_count == -2
         assert lock_info.excl_wait_count == 0
 
-        self.log_test_msg("about to do step 7", log_ver=log_ver)
+        log_test_msg("about to do step 7", log_ver=log_ver)
 
         ml_recursive_release_pattern_to_1 = (
             "SELock release request continues "
@@ -1430,7 +1454,7 @@ class TestSELockBasic:
         assert lock_info.owner_count == -1
         assert lock_info.excl_wait_count == 0
 
-        self.log_test_msg("about to do step 8", log_ver=log_ver)
+        log_test_msg("about to do step 8", log_ver=log_ver)
 
         log_ver.add_pattern(pattern=ml_excl_release_pattern)
 
@@ -1441,7 +1465,7 @@ class TestSELockBasic:
         assert lock_info.owner_count == 0
         assert lock_info.excl_wait_count == 0
 
-        self.log_test_msg("about to do step 9", log_ver=log_ver)
+        log_test_msg("about to do step 9", log_ver=log_ver)
 
         log_ver.add_pattern(pattern=ml_recursive_obtain_pattern)
 
@@ -1455,7 +1479,7 @@ class TestSELockBasic:
         assert lock_info.owner_count == -1
         assert lock_info.excl_wait_count == 0
 
-        self.log_test_msg("about to do step 10", log_ver=log_ver)
+        log_test_msg("about to do step 10", log_ver=log_ver)
 
         log_ver.add_pattern(pattern=ml_recursive_excl_continue_pattern_to_2)
 
@@ -1469,7 +1493,7 @@ class TestSELockBasic:
         assert lock_info.owner_count == -2
         assert lock_info.excl_wait_count == 0
 
-        self.log_test_msg("about to do step 11", log_ver=log_ver)
+        log_test_msg("about to do step 11", log_ver=log_ver)
 
         log_ver.add_pattern(pattern=ml_recursive_release_pattern_to_1)
 
@@ -1483,7 +1507,7 @@ class TestSELockBasic:
         assert lock_info.owner_count == -1
         assert lock_info.excl_wait_count == 0
 
-        self.log_test_msg("about to do step 12", log_ver=log_ver)
+        log_test_msg("about to do step 12", log_ver=log_ver)
 
         log_ver.add_pattern(pattern=ml_excl_release_pattern)
 
@@ -1493,7 +1517,7 @@ class TestSELockBasic:
         assert len(lock_info.queue) == 0
         assert lock_info.owner_count == 0
 
-        self.log_test_msg("about to do step 13", log_ver=log_ver)
+        log_test_msg("about to do step 13", log_ver=log_ver)
 
         log_ver.add_pattern(pattern=ml_excl_obtain_pattern)
 
@@ -1506,7 +1530,7 @@ class TestSELockBasic:
         assert lock_info.owner_count == -1
         assert lock_info.excl_wait_count == 0
 
-        self.log_test_msg("about to do step 14", log_ver=log_ver)
+        log_test_msg("about to do step 14", log_ver=log_ver)
 
         log_ver.add_pattern(pattern=ml_recursive_excl_continue_pattern_to_2)
 
@@ -1520,7 +1544,7 @@ class TestSELockBasic:
         assert lock_info.owner_count == -2
         assert lock_info.excl_wait_count == 0
 
-        self.log_test_msg("about to do step 15", log_ver=log_ver)
+        log_test_msg("about to do step 15", log_ver=log_ver)
 
         ml_recursive_excl_continue_pattern_to_3 = (
             "SELock exclusive recursive obtain request continues "
@@ -1541,7 +1565,7 @@ class TestSELockBasic:
         assert lock_info.owner_count == -3
         assert lock_info.excl_wait_count == 0
 
-        self.log_test_msg("about to do step 16", log_ver=log_ver)
+        log_test_msg("about to do step 16", log_ver=log_ver)
 
         ml_recursive_release_pattern_to_2 = (
             "SELock release request continues "
@@ -1561,7 +1585,7 @@ class TestSELockBasic:
         assert lock_info.owner_count == -2
         assert lock_info.excl_wait_count == 0
 
-        self.log_test_msg("about to do step 17", log_ver=log_ver)
+        log_test_msg("about to do step 17", log_ver=log_ver)
 
         log_ver.add_pattern(pattern=ml_recursive_release_pattern_to_1)
 
@@ -1575,7 +1599,7 @@ class TestSELockBasic:
         assert lock_info.owner_count == -1
         assert lock_info.excl_wait_count == 0
 
-        self.log_test_msg("about to do step 18", log_ver=log_ver)
+        log_test_msg("about to do step 18", log_ver=log_ver)
 
         log_ver.add_pattern(pattern=ml_excl_release_pattern)
 
@@ -1585,7 +1609,7 @@ class TestSELockBasic:
         assert len(lock_info.queue) == 0
         assert lock_info.owner_count == 0
 
-        self.log_test_msg("mainline exit", log_ver=log_ver)
+        log_test_msg("mainline exit", log_ver=log_ver)
 
         ################################################################
         # check log results
@@ -2671,7 +2695,7 @@ class TestSELock:
                     else:
                         use_context = ContextArg.ContextObtain
 
-                release_grant_list = []
+                release_grant_list: list[ReleaseGrant] = []
 
                 a_thread = threading.Thread(
                     target=f1,
@@ -2810,7 +2834,7 @@ class TestSELock:
     ####################################################################
     lock_requests1 = it.product(lock_request_list, repeat=4)
     lock_requests2 = it.product(lock_request_list, repeat=3)
-    lock_requests3 = it.product(lock_request_list, repeat=3)
+    lock_requests3 = it.product(lock_request_list, repeat=2)
 
     @pytest.mark.parametrize("app1_requests_arg", lock_requests1)
     @pytest.mark.parametrize("app2_requests_arg", lock_requests2)

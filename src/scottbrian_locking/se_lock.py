@@ -427,47 +427,6 @@ class SELock:
         )
 
     ####################################################################
-    # _check_for_already_owned_error
-    ####################################################################
-    def _check_for_already_owned_error(self, req_type: ReqType) -> None:
-        """Method to raise error if deadlock detected.
-
-        Args:
-            req_type: req_type: type of lock request
-
-        Raises:
-            SELockAlreadyOwnedError: The new request already owns
-                the SELock and must not wait.
-
-        Notes:
-            1) The se_lock_lock must be held when calling this method
-
-        """
-        # we need to check all entries except the last which is where
-        # the new request was just queued
-        thread = threading.current_thread()
-        thread_name = thread.name
-        for idx in range(len(self.owner_wait_q) - 1):
-            if self.owner_wait_q[idx].thread is thread:
-                # remove the new request from the end of the queue
-                self.owner_wait_q.pop()
-
-                # we know the new count will be non-zero after the
-                # decrement because we call this method when it is
-                # greater than 1 - so, we know a del will not be needed
-                self.owner_index[thread_name] -= 1
-
-                error_msg = (
-                    f"{req_type} for thread {thread_name} "
-                    "raising SELockAlreadyOwnedError because the requestor "
-                    "already owns the lock. "
-                    f"Request call sequence: {call_seq(latest=2, depth=2)}"
-                )
-                self.logger.error(error_msg)
-
-                raise SELockAlreadyOwnedError(error_msg)
-
-    ####################################################################
     # obtain_excl
     ####################################################################
     def obtain_excl_recursive(self, timeout: OptIntFloat = None) -> None:
@@ -616,148 +575,6 @@ class SELock:
             wait_event=wait_event,
             req_type=SELock.ReqType.Share,
             timeout=timeout,
-        )
-
-    ####################################################################
-    # _wait_for_lock
-    ####################################################################
-
-    def _wait_for_lock(
-        self,
-        wait_event: threading.Event,
-        req_type: ReqType,
-        timeout: OptIntFloat,
-    ) -> None:
-        """Method to wait for the SELock.
-
-        Args:
-            wait_event: event to wait on that will be set by the current
-                owner upon lock release
-            req_type: type of lock request
-            timeout: number of seconds that the request is allowed to
-                       wait for the lock before an error is raised
-
-        Raises:
-            SELockOwnerNotAlive: The owner of the SELock is not alive
-                and will thus never release the lock.
-            SELockObtainTimeout: A lock obtain request has timed out
-                waiting for the current owner thread to release the
-                lock.
-
-        """
-        # There are 2 timeout values used in this method. The timeout
-        # arg passed in is the number of seconds that the caller of
-        # obtain is giving us to get the lock. This value can be as
-        # small or as large as the caller wants, and could even be
-        # a value of None which means no time limit is to be used.
-        # The second timeout value if the one used on the wait_event
-        # when we wait for the lock. We want to wake up periodically to
-        # check whether the lock owner is still alive and raise an error
-        # if not. This timeout value is defined in WAIT_TIMEOUT and is
-        # a fairly large value intended to only wake us up to check for
-        # the rare case of the lock owner having failed and becoming not
-        # alive. If the caller specified timeout value is smaller than
-        # the WAIT_TIMEOUT value, we will use that on the wait_event
-        # to ensure we are honoring the caller desired timeout value.
-        # Note also that the timer.timeout value is the remaining time
-        # for the caller specified timeout - it is reduced as needed as
-        # we continue to loop checking the owner thread (unless it was
-        # smaller than WAIT_TIMEOUT in which case we will timeout the
-        # request the first time we check that current lock owner.
-
-        timer = Timer(timeout=timeout)
-
-        if self.debug_logging_enabled:
-            self.logger.debug(
-                f"{req_type} for thread {threading.current_thread().name} waiting "
-                f"for SELock, call sequence: {call_seq(latest=2, depth=2)}"
-            )
-        while True:
-            remaining_time = timer.remaining_time()
-            if remaining_time:
-                timeout_value = min(remaining_time, SELock.WAIT_TIMEOUT)
-            else:
-                timeout_value = SELock.WAIT_TIMEOUT
-            # wait for lock to be granted to us
-            if wait_event.wait(timeout=timeout_value):
-                return
-
-            # we have waited long enough, check if owner still alive
-            with self.se_lock_lock:
-                # we need to check the wait_event again under the lock
-                # to make sure we did not just now get the lock
-                if wait_event.is_set():
-                    return
-
-                # We may have timed out by now if the caller specified a
-                # timeout value, but we give priority to the owner
-                # having become not alive and raise that error here
-                # instead since that is likely the root cause of the
-                # timeout.
-                if not self.owner_wait_q[0].thread.is_alive():
-                    error_msg = (
-                        f"{req_type} for thread {threading.current_thread().name} "
-                        "raising SELockOwnerNotAlive while waiting for a lock because "
-                        f"the lock owner thread {self.owner_wait_q[0].thread} is not "
-                        "alive and will thus never release the lock. "
-                        f"Request call sequence: {call_seq(latest=2, depth=2)}"
-                    )
-                    self.logger.error(error_msg)
-
-                    raise SELockOwnerNotAlive(error_msg)
-
-                if timer.is_expired():
-                    owner_waiter_desc = self._find_owner_waiter(
-                        thread=threading.current_thread()
-                    )
-
-                    del self.owner_wait_q[owner_waiter_desc.item_idx]
-                    if owner_waiter_desc.item_mode == SELock._Mode.EXCL:
-                        self.excl_wait_count -= 1
-
-                    error_msg = (
-                        f"{req_type} for thread {threading.current_thread().name} "
-                        "raising SELockObtainTimeout because the thread has timed out "
-                        "waiting for the current owner thread "
-                        f"{self.owner_wait_q[0].thread.name} to release the lock. "
-                        f"Request call sequence: {call_seq(latest=2, depth=2)}"
-                    )
-                    self.logger.error(error_msg)
-
-                    raise SELockObtainTimeout(error_msg)
-
-    ####################################################################
-    # _find_owner_waiter
-    ####################################################################
-    def _find_owner_waiter(self, thread: threading.Thread) -> _OwnerWaiterDesc:
-        """Method to find the given thread on the owner_waiter_q.
-
-        Args:
-            thread: thread of the owner of waiter to search for
-
-        Returns:
-            An _OwnerWaiterDesc item that contain the index of the
-            _LockOwnerWaiter item on the owner_waiter_q, the index of
-            the first exclusive request on the owner_waiter_q that
-            precedes the found item, and the mode of the found item.
-
-        Notes:
-            1) The se_lock_lock must be held when calling this method
-
-        """
-        excl_idx = -1  # init to indicate exclusive req not found
-        item_idx = -1  # init to indicate req not found
-        item_mode = SELock._Mode.EXCL
-        for idx, item in enumerate(self.owner_wait_q):
-            if (excl_idx == -1) and (item.mode == SELock._Mode.EXCL):
-                excl_idx = idx
-            if item.thread is thread:
-                item_idx = idx
-                item_mode = item.mode
-                break
-
-        return SELock._OwnerWaiterDesc(
-            excl_idx=excl_idx, item_idx=item_idx, item_mode=item_mode
         )
 
     ####################################################################
@@ -937,6 +754,188 @@ class SELock:
                                 f"thread {item.thread}, "
                                 f"call sequence: {call_seq(latest=1, depth=2)}"
                             )
+
+    ####################################################################
+    # _wait_for_lock
+    ####################################################################
+    def _wait_for_lock(
+        self,
+        wait_event: threading.Event,
+        req_type: ReqType,
+        timeout: OptIntFloat = None,
+    ) -> None:
+        """Method to wait for the SELock.
+
+        Args:
+            wait_event: event to wait on that will be set by the current
+                owner upon lock release
+            req_type: type of lock request
+            timeout: number of seconds that the request is allowed to
+                       wait for the lock before an error is raised
+
+        Raises:
+            SELockOwnerNotAlive: The owner of the SELock is not alive
+                and will thus never release the lock.
+            SELockObtainTimeout: A lock obtain request has timed out
+                waiting for the current owner thread to release the
+                lock.
+
+        """
+        # There are 2 timeout values used in this method. The timeout
+        # arg passed in is the number of seconds that the caller of
+        # obtain is giving us to get the lock. This value can be as
+        # small or as large as the caller wants, and could even be
+        # a value of None which means no time limit is to be used.
+        # The second timeout value if the one used on the wait_event
+        # when we wait for the lock. We want to wake up periodically to
+        # check whether the lock owner is still alive and raise an error
+        # if not. This timeout value is defined in WAIT_TIMEOUT and is
+        # a fairly large value intended to only wake us up to check for
+        # the rare case of the lock owner having failed and becoming not
+        # alive. If the caller specified timeout value is smaller than
+        # the WAIT_TIMEOUT value, we will use that on the wait_event
+        # to ensure we are honoring the caller desired timeout value.
+        # Note also that the timer.timeout value is the remaining time
+        # for the caller specified timeout - it is reduced as needed as
+        # we continue to loop checking the owner thread (unless it was
+        # smaller than WAIT_TIMEOUT in which case we will timeout the
+        # request the first time we check that current lock owner.
+
+        timer = Timer(timeout=timeout)
+
+        if self.debug_logging_enabled:
+            self.logger.debug(
+                f"{req_type} for thread {threading.current_thread().name} waiting "
+                f"for SELock, call sequence: {call_seq(latest=2, depth=2)}"
+            )
+        while True:
+            remaining_time = timer.remaining_time()
+            if remaining_time:
+                timeout_value = min(remaining_time, SELock.WAIT_TIMEOUT)
+            else:
+                timeout_value = SELock.WAIT_TIMEOUT
+            # wait for lock to be granted to us
+            if wait_event.wait(timeout=timeout_value):
+                return
+
+            # we have waited long enough, check if owner still alive
+            with self.se_lock_lock:
+                # we need to check the wait_event again under the lock
+                # to make sure we did not just now get the lock
+                if wait_event.is_set():
+                    return
+
+                # We may have timed out by now if the caller specified a
+                # timeout value, but we give priority to the owner
+                # having become not alive and raise that error here
+                # instead since that is likely the root cause of the
+                # timeout.
+                if not self.owner_wait_q[0].thread.is_alive():
+                    error_msg = (
+                        f"{req_type} for thread {threading.current_thread().name} "
+                        "raising SELockOwnerNotAlive while waiting for a lock because "
+                        f"the lock owner thread {self.owner_wait_q[0].thread} is not "
+                        "alive and will thus never release the lock. "
+                        f"Request call sequence: {call_seq(latest=2, depth=2)}"
+                    )
+                    self.logger.error(error_msg)
+
+                    raise SELockOwnerNotAlive(error_msg)
+
+                if timer.is_expired():
+                    owner_waiter_desc = self._find_owner_waiter(
+                        thread=threading.current_thread()
+                    )
+
+                    del self.owner_wait_q[owner_waiter_desc.item_idx]
+                    if owner_waiter_desc.item_mode == SELock._Mode.EXCL:
+                        self.excl_wait_count -= 1
+
+                    error_msg = (
+                        f"{req_type} for thread {threading.current_thread().name} "
+                        "raising SELockObtainTimeout because the thread has timed out "
+                        "waiting for the current owner thread "
+                        f"{self.owner_wait_q[0].thread.name} to release the lock. "
+                        f"Request call sequence: {call_seq(latest=2, depth=2)}"
+                    )
+                    self.logger.error(error_msg)
+
+                    raise SELockObtainTimeout(error_msg)
+
+    ####################################################################
+    # _find_owner_waiter
+    ####################################################################
+    def _find_owner_waiter(self, thread: threading.Thread) -> _OwnerWaiterDesc:
+        """Method to find the given thread on the owner_waiter_q.
+
+        Args:
+            thread: thread of the owner of waiter to search for
+
+        Returns:
+            An _OwnerWaiterDesc item that contain the index of the
+            _LockOwnerWaiter item on the owner_waiter_q, the index of
+            the first exclusive request on the owner_waiter_q that
+            precedes the found item, and the mode of the found item.
+
+        Notes:
+            1) The se_lock_lock must be held when calling this method
+
+        """
+        excl_idx = -1  # init to indicate exclusive req not found
+        item_idx = -1  # init to indicate req not found
+        item_mode = SELock._Mode.EXCL
+        for idx, item in enumerate(self.owner_wait_q):
+            if (excl_idx == -1) and (item.mode == SELock._Mode.EXCL):
+                excl_idx = idx
+            if item.thread is thread:
+                item_idx = idx
+                item_mode = item.mode
+                break
+
+        return SELock._OwnerWaiterDesc(
+            excl_idx=excl_idx, item_idx=item_idx, item_mode=item_mode
+        )
+
+    ####################################################################
+    # _check_for_already_owned_error
+    ####################################################################
+    def _check_for_already_owned_error(self, req_type: ReqType) -> None:
+        """Method to raise error if deadlock detected.
+
+        Args:
+            req_type: req_type: type of lock request
+
+        Raises:
+            SELockAlreadyOwnedError: The new request already owns
+                the SELock and must not wait.
+
+        Notes:
+            1) The se_lock_lock must be held when calling this method
+
+        """
+        # we need to check all entries except the last which is where
+        # the new request was just queued
+        thread = threading.current_thread()
+        thread_name = thread.name
+        for idx in range(len(self.owner_wait_q) - 1):
+            if self.owner_wait_q[idx].thread is thread:
+                # remove the new request from the end of the queue
+                self.owner_wait_q.pop()
+
+                # we know the new count will be non-zero after the
+                # decrement because we call this method when it is
+                # greater than 1 - so, we know a del will not be needed
+                self.owner_index[thread_name] -= 1
+
+                error_msg = (
+                    f"{req_type} for thread {thread_name} "
+                    "raising SELockAlreadyOwnedError because the requestor "
+                    "already owns the lock. "
+                    f"Request call sequence: {call_seq(latest=2, depth=2)}"
+                )
+                self.logger.error(error_msg)
+
+                raise SELockAlreadyOwnedError(error_msg)
 
     ####################################################################
     # get_info
