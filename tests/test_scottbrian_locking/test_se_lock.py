@@ -10,12 +10,11 @@ import logging
 import re
 import threading
 import time
-from typing import Any, cast, Optional
+from typing import Optional
 
 ########################################################################
 # Third Party
 ########################################################################
-from scottbrian_utils.diag_msg import get_formatted_call_sequence as call_seq
 from scottbrian_utils.flower_box import print_flower_box_msg as flowers
 from scottbrian_utils.log_verifier import LogVer
 from scottbrian_utils.msgs import Msgs
@@ -540,8 +539,6 @@ class TestSELockErrors:
         num_reqs = 100000
         join_list = []
         for idx in range(num_reqs):
-            # if idx % 1000 == 0:
-            #     logger.error(f"starting {idx=}, {len(a_lock.owner_index)=}")
             if idx == num_reqs - 1:
                 second_share = True
             else:
@@ -555,9 +552,7 @@ class TestSELockErrors:
         assert len(a_lock.owner_wait_q) == num_reqs
 
         ml_event2.set()
-        for idx, item in enumerate(join_list):
-            # if idx % 1000 == 0:
-            #     logger.error(f"joining {idx=}, {len(a_lock.owner_index)=}")
+        for item in join_list:
             item.join()
 
         a_lock.logger.setLevel(logging.DEBUG)
@@ -1308,11 +1303,25 @@ class TestSELockBasic:
     ####################################################################
     # test_se_lock_obtain_excl
     ####################################################################
+    @pytest.mark.parametrize(
+        "ml_context_arg",
+        [
+            ContextArg.NoContext,
+            ContextArg.ContextExclShare,
+            ContextArg.ContextObtain,
+        ],
+    )
     def test_se_lock_obtain_excl(
         self,
+        ml_context_arg: ContextArg,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Test exclusive lock obtain."""
+        """Test exclusive lock obtain.
+
+        Args:
+            ml_context_arg: specifies the type of obtain to do
+
+        """
 
         ################################################################
         # mainline
@@ -1321,95 +1330,146 @@ class TestSELockBasic:
 
         log_test_msg("mainline entry", log_ver=log_ver)
 
+        if ml_context_arg == ContextArg.NoContext:
+            ml_excl_call_seq = (
+                "python.py::pytest_pyfunc_call:[0-9]+ "
+                "-> test_se_lock.py::TestSELockBasic.test_se_lock_obtain_excl:[0-9]+"
+            )
+            ml_release_call_seq = ml_excl_call_seq
+
+        elif ml_context_arg == ContextArg.ContextExclShare:
+            ml_excl_call_seq = (
+                "test_se_lock.py::TestSELockBasic.test_se_lock_obtain_excl:[0-9]+ "
+                "-> se_lock.py::SELockExcl.__enter__:[0-9]+"
+            )
+            ml_release_call_seq = (
+                "test_se_lock.py::TestSELockBasic.test_se_lock_obtain_excl:[0-9]+ "
+                f"-> se_lock.py::SELockExcl.__exit__:[0-9]+"
+            )
+
+        else:
+            ml_excl_call_seq = (
+                "test_se_lock.py::TestSELockBasic.test_se_lock_obtain_excl:[0-9]+ "
+                "-> se_lock.py::SELockObtain.__enter__:[0-9]+"
+            )
+            ml_release_call_seq = (
+                "test_se_lock.py::TestSELockBasic.test_se_lock_obtain_excl:[0-9]+ "
+                "-> se_lock.py::SELockObtain.__exit__:[0-9]+"
+            )
+
         ml_thread = threading.current_thread()
         ml_thread_name = ml_thread.name
 
         a_se_lock = SELock()
 
+        ################################################################
+        # steps 1-2
+        # 1: obtain
+        # 2: release
+        ################################################################
         log_test_msg("about to do step 1", log_ver=log_ver)
 
         ml_esc_thread_name = re.escape(f"{ml_thread.name}")
         ml_excl_obtain_pattern = (
             "SELock exclusive obtain request granted immediate exclusive "
             f"control to thread {ml_esc_thread_name}, "
-            "call sequence: python.py::pytest_pyfunc_call:[0-9]+ -> "
-            "test_se_lock.py::TestSELockBasic.test_se_lock_obtain_excl:[0-9]+"
+            f"call sequence: {ml_excl_call_seq}"
         )
 
         log_ver.add_pattern(pattern=ml_excl_obtain_pattern)
-
-        a_se_lock.obtain_excl()
-
-        lock_info = a_se_lock.get_info()
-
-        assert len(lock_info.queue) == 1
-        assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread.name == ml_thread_name
-        assert not lock_info.queue[0].event_flag
-        assert lock_info.owner_count == -1
-        assert lock_info.excl_wait_count == 0
 
         log_test_msg("about to do step 2", log_ver=log_ver)
 
         ml_excl_release_pattern = (
             f"SELock release request removed exclusive control for thread "
             f"{ml_esc_thread_name}, "
-            "call sequence: python.py::pytest_pyfunc_call:[0-9]+ -> "
-            "test_se_lock.py::TestSELockBasic.test_se_lock_obtain_excl:[0-9]+"
+            f"call sequence: {ml_release_call_seq}"
         )
         log_ver.add_pattern(pattern=ml_excl_release_pattern)
 
-        a_se_lock.release()
+        if ml_context_arg == ContextArg.NoContext:
+            a_se_lock.obtain_excl()
+            obt_lock_info = a_se_lock.get_info()
+            a_se_lock.release()
 
-        lock_info = a_se_lock.get_info()
-        assert len(lock_info.queue) == 0
-        assert lock_info.owner_count == 0
-        assert lock_info.excl_wait_count == 0
+        elif ml_context_arg == ContextArg.ContextExclShare:
+            with SELockExcl(a_se_lock):
+                obt_lock_info = a_se_lock.get_info()
 
+        else:
+            with SELockObtain(a_se_lock, obtain_mode=SELockObtainMode.Exclusive):
+                obt_lock_info = a_se_lock.get_info()
+
+        assert len(obt_lock_info.queue) == 1
+        assert obt_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+        assert obt_lock_info.queue[0].thread.name == ml_thread_name
+        assert not obt_lock_info.queue[0].event_flag
+        assert obt_lock_info.owner_count == -1
+        assert obt_lock_info.excl_wait_count == 0
+
+        rel_lock_info = a_se_lock.get_info()
+        assert len(rel_lock_info.queue) == 0
+        assert rel_lock_info.owner_count == 0
+        assert rel_lock_info.excl_wait_count == 0
+
+        ################################################################
+        # steps 3-4
+        # 3: recursive obtain
+        # 4: release
+        ################################################################
         log_test_msg("about to do step 3", log_ver=log_ver)
 
         ml_recursive_obtain_pattern = (
             "SELock exclusive recursive obtain request granted "
             "immediate exclusive control with recursion depth of 1 for "
             f"thread {ml_esc_thread_name}, "
-            "call sequence: python.py::pytest_pyfunc_call:[0-9]+ -> "
-            "test_se_lock.py::TestSELockBasic.test_se_lock_obtain_excl:[0-9]+"
+            f"call sequence: {ml_excl_call_seq}"
         )
         log_ver.add_pattern(pattern=ml_recursive_obtain_pattern)
-
-        a_se_lock.obtain_excl_recursive()
-
-        lock_info = a_se_lock.get_info()
-        assert len(lock_info.queue) == 1
-        assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread.name == ml_thread_name
-        assert not lock_info.queue[0].event_flag
-        assert lock_info.owner_count == -1
-        assert lock_info.excl_wait_count == 0
 
         log_test_msg("about to do step 4", log_ver=log_ver)
 
         log_ver.add_pattern(pattern=ml_excl_release_pattern)
 
-        a_se_lock.release()
+        if ml_context_arg == ContextArg.NoContext:
+            a_se_lock.obtain_excl_recursive()
+            obt_lock_info = a_se_lock.get_info()
+            a_se_lock.release()
 
-        lock_info = a_se_lock.get_info()
-        assert len(lock_info.queue) == 0
-        assert lock_info.owner_count == 0
-        assert lock_info.excl_wait_count == 0
+        elif ml_context_arg == ContextArg.ContextExclShare:
+            with SELockExcl(a_se_lock, allow_recursive_obtain=True):
+                obt_lock_info = a_se_lock.get_info()
 
+        else:
+            with SELockObtain(
+                a_se_lock,
+                obtain_mode=SELockObtainMode.Exclusive,
+                allow_recursive_obtain=True,
+            ):
+                obt_lock_info = a_se_lock.get_info()
+
+        assert len(obt_lock_info.queue) == 1
+        assert obt_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+        assert obt_lock_info.queue[0].thread.name == ml_thread_name
+        assert not obt_lock_info.queue[0].event_flag
+        assert obt_lock_info.owner_count == -1
+        assert obt_lock_info.excl_wait_count == 0
+
+        rel_lock_info = a_se_lock.get_info()
+        assert len(rel_lock_info.queue) == 0
+        assert rel_lock_info.owner_count == 0
+        assert rel_lock_info.excl_wait_count == 0
+
+        ################################################################
+        # steps 5-8
+        # 5: obtain
+        # 6: recursive obtain
+        # 7: release
+        # 8: release
+        ################################################################
         log_test_msg("about to do step 5", log_ver=log_ver)
 
         log_ver.add_pattern(pattern=ml_excl_obtain_pattern)
-
-        a_se_lock.obtain_excl()
-        lock_info = a_se_lock.get_info()
-        assert len(lock_info.queue) == 1
-        assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread.name == ml_thread_name
-        assert not lock_info.queue[0].event_flag
-        assert lock_info.owner_count == -1
-        assert lock_info.excl_wait_count == 0
 
         log_test_msg("about to do step 6", log_ver=log_ver)
 
@@ -1417,20 +1477,9 @@ class TestSELockBasic:
             "SELock exclusive recursive obtain request continues "
             "exclusive control with recursion depth increased to 2 "
             f"for thread {ml_esc_thread_name}, "
-            "call sequence: python.py::pytest_pyfunc_call:[0-9]+ -> "
-            "test_se_lock.py::TestSELockBasic.test_se_lock_obtain_excl:[0-9]+"
+            f"call sequence: {ml_excl_call_seq}"
         )
         log_ver.add_pattern(pattern=ml_recursive_excl_continue_pattern_to_2)
-
-        a_se_lock.obtain_excl_recursive()
-
-        lock_info = a_se_lock.get_info()
-        assert len(lock_info.queue) == 1
-        assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread.name == ml_thread_name
-        assert not lock_info.queue[0].event_flag
-        assert lock_info.owner_count == -2
-        assert lock_info.excl_wait_count == 0
 
         log_test_msg("about to do step 7", log_ver=log_ver)
 
@@ -1438,111 +1487,267 @@ class TestSELockBasic:
             "SELock release request continues "
             "exclusive control with recursion depth reduced to 1 "
             f"for thread {ml_esc_thread_name}, "
-            "call sequence: python.py::pytest_pyfunc_call:[0-9]+ -> "
-            "test_se_lock.py::TestSELockBasic.test_se_lock_obtain_excl:[0-9]+"
+            f"call sequence: {ml_release_call_seq}"
         )
         log_ver.add_pattern(pattern=ml_recursive_release_pattern_to_1)
-
-        a_se_lock.release()
-
-        lock_info = a_se_lock.get_info()
-
-        assert len(lock_info.queue) == 1
-        assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread.name == ml_thread_name
-        assert not lock_info.queue[0].event_flag
-        assert lock_info.owner_count == -1
-        assert lock_info.excl_wait_count == 0
 
         log_test_msg("about to do step 8", log_ver=log_ver)
 
         log_ver.add_pattern(pattern=ml_excl_release_pattern)
 
-        a_se_lock.release()
+        if ml_context_arg == ContextArg.NoContext:
+            a_se_lock.obtain_excl()
+            obt_lock_info = a_se_lock.get_info()
 
-        lock_info = a_se_lock.get_info()
-        assert len(lock_info.queue) == 0
-        assert lock_info.owner_count == 0
-        assert lock_info.excl_wait_count == 0
+            assert len(obt_lock_info.queue) == 1
+            assert obt_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+            assert obt_lock_info.queue[0].thread.name == ml_thread_name
+            assert not obt_lock_info.queue[0].event_flag
+            assert obt_lock_info.owner_count == -1
+            assert obt_lock_info.excl_wait_count == 0
+
+            a_se_lock.obtain_excl_recursive()
+
+            obt_lock_info = a_se_lock.get_info()
+            assert len(obt_lock_info.queue) == 1
+            assert obt_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+            assert obt_lock_info.queue[0].thread.name == ml_thread_name
+            assert not obt_lock_info.queue[0].event_flag
+            assert obt_lock_info.owner_count == -2
+            assert obt_lock_info.excl_wait_count == 0
+
+            a_se_lock.release()
+
+            rel_lock_info = a_se_lock.get_info()
+
+            assert len(rel_lock_info.queue) == 1
+            assert rel_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+            assert rel_lock_info.queue[0].thread.name == ml_thread_name
+            assert not rel_lock_info.queue[0].event_flag
+            assert rel_lock_info.owner_count == -1
+            assert rel_lock_info.excl_wait_count == 0
+
+            a_se_lock.release()
+
+        elif ml_context_arg == ContextArg.ContextExclShare:
+            with SELockExcl(a_se_lock, allow_recursive_obtain=False):
+                obt_lock_info = a_se_lock.get_info()
+
+                assert len(obt_lock_info.queue) == 1
+                assert obt_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+                assert obt_lock_info.queue[0].thread.name == ml_thread_name
+                assert not obt_lock_info.queue[0].event_flag
+                assert obt_lock_info.owner_count == -1
+                assert obt_lock_info.excl_wait_count == 0
+
+                with SELockExcl(a_se_lock, allow_recursive_obtain=True):
+                    obt_lock_info = a_se_lock.get_info()
+
+                    assert len(obt_lock_info.queue) == 1
+                    assert obt_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+                    assert obt_lock_info.queue[0].thread.name == ml_thread_name
+                    assert not obt_lock_info.queue[0].event_flag
+                    assert obt_lock_info.owner_count == -2
+                    assert obt_lock_info.excl_wait_count == 0
+
+                rel_lock_info = a_se_lock.get_info()
+
+                assert len(rel_lock_info.queue) == 1
+                assert rel_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+                assert rel_lock_info.queue[0].thread.name == ml_thread_name
+                assert not rel_lock_info.queue[0].event_flag
+                assert rel_lock_info.owner_count == -1
+                assert rel_lock_info.excl_wait_count == 0
+
+        else:
+            with SELockObtain(
+                a_se_lock,
+                obtain_mode=SELockObtainMode.Exclusive,
+                allow_recursive_obtain=False,
+            ):
+                obt_lock_info = a_se_lock.get_info()
+
+                assert len(obt_lock_info.queue) == 1
+                assert obt_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+                assert obt_lock_info.queue[0].thread.name == ml_thread_name
+                assert not obt_lock_info.queue[0].event_flag
+                assert obt_lock_info.owner_count == -1
+                assert obt_lock_info.excl_wait_count == 0
+
+                with SELockObtain(
+                    a_se_lock,
+                    obtain_mode=SELockObtainMode.Exclusive,
+                    allow_recursive_obtain=True,
+                ):
+                    obt_lock_info = a_se_lock.get_info()
+
+                    assert len(obt_lock_info.queue) == 1
+                    assert obt_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+                    assert obt_lock_info.queue[0].thread.name == ml_thread_name
+                    assert not obt_lock_info.queue[0].event_flag
+                    assert obt_lock_info.owner_count == -2
+                    assert obt_lock_info.excl_wait_count == 0
+
+                rel_lock_info = a_se_lock.get_info()
+
+                assert len(rel_lock_info.queue) == 1
+                assert rel_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+                assert rel_lock_info.queue[0].thread.name == ml_thread_name
+                assert not rel_lock_info.queue[0].event_flag
+                assert rel_lock_info.owner_count == -1
+                assert rel_lock_info.excl_wait_count == 0
+
+        rel_lock_info = a_se_lock.get_info()
+        assert len(rel_lock_info.queue) == 0
+        assert rel_lock_info.owner_count == 0
+        assert rel_lock_info.excl_wait_count == 0
+
+        ################################################################
+        # steps 9-12
+        # 09: recursive obtain
+        # 10: recursive obtain
+        # 11: release
+        # 12: release
+        ################################################################
 
         log_test_msg("about to do step 9", log_ver=log_ver)
 
         log_ver.add_pattern(pattern=ml_recursive_obtain_pattern)
 
-        a_se_lock.obtain_excl_recursive()
-
-        lock_info = a_se_lock.get_info()
-        assert len(lock_info.queue) == 1
-        assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread.name == ml_thread_name
-        assert not lock_info.queue[0].event_flag
-        assert lock_info.owner_count == -1
-        assert lock_info.excl_wait_count == 0
-
         log_test_msg("about to do step 10", log_ver=log_ver)
 
         log_ver.add_pattern(pattern=ml_recursive_excl_continue_pattern_to_2)
-
-        a_se_lock.obtain_excl_recursive()
-
-        lock_info = a_se_lock.get_info()
-        assert len(lock_info.queue) == 1
-        assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread.name == ml_thread_name
-        assert not lock_info.queue[0].event_flag
-        assert lock_info.owner_count == -2
-        assert lock_info.excl_wait_count == 0
 
         log_test_msg("about to do step 11", log_ver=log_ver)
 
         log_ver.add_pattern(pattern=ml_recursive_release_pattern_to_1)
 
-        a_se_lock.release()
-
-        lock_info = a_se_lock.get_info()
-        assert len(lock_info.queue) == 1
-        assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread.name == ml_thread_name
-        assert not lock_info.queue[0].event_flag
-        assert lock_info.owner_count == -1
-        assert lock_info.excl_wait_count == 0
-
         log_test_msg("about to do step 12", log_ver=log_ver)
 
         log_ver.add_pattern(pattern=ml_excl_release_pattern)
 
-        a_se_lock.release()
+        if ml_context_arg == ContextArg.NoContext:
+            a_se_lock.obtain_excl_recursive()
+
+            obt_lock_info = a_se_lock.get_info()
+            assert len(obt_lock_info.queue) == 1
+            assert obt_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+            assert obt_lock_info.queue[0].thread.name == ml_thread_name
+            assert not obt_lock_info.queue[0].event_flag
+            assert obt_lock_info.owner_count == -1
+            assert obt_lock_info.excl_wait_count == 0
+
+            a_se_lock.obtain_excl_recursive()
+
+            obt_lock_info = a_se_lock.get_info()
+            assert len(obt_lock_info.queue) == 1
+            assert obt_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+            assert obt_lock_info.queue[0].thread.name == ml_thread_name
+            assert not obt_lock_info.queue[0].event_flag
+            assert obt_lock_info.owner_count == -2
+            assert obt_lock_info.excl_wait_count == 0
+
+            a_se_lock.release()
+
+            rel_lock_info = a_se_lock.get_info()
+
+            assert len(rel_lock_info.queue) == 1
+            assert rel_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+            assert rel_lock_info.queue[0].thread.name == ml_thread_name
+            assert not rel_lock_info.queue[0].event_flag
+            assert rel_lock_info.owner_count == -1
+            assert rel_lock_info.excl_wait_count == 0
+
+            a_se_lock.release()
+
+        elif ml_context_arg == ContextArg.ContextExclShare:
+            with SELockExcl(a_se_lock, allow_recursive_obtain=True):
+                obt_lock_info = a_se_lock.get_info()
+
+                assert len(obt_lock_info.queue) == 1
+                assert obt_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+                assert obt_lock_info.queue[0].thread.name == ml_thread_name
+                assert not obt_lock_info.queue[0].event_flag
+                assert obt_lock_info.owner_count == -1
+                assert obt_lock_info.excl_wait_count == 0
+
+                with SELockExcl(a_se_lock, allow_recursive_obtain=True):
+                    obt_lock_info = a_se_lock.get_info()
+
+                    assert len(obt_lock_info.queue) == 1
+                    assert obt_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+                    assert obt_lock_info.queue[0].thread.name == ml_thread_name
+                    assert not obt_lock_info.queue[0].event_flag
+                    assert obt_lock_info.owner_count == -2
+                    assert obt_lock_info.excl_wait_count == 0
+
+                rel_lock_info = a_se_lock.get_info()
+
+                assert len(rel_lock_info.queue) == 1
+                assert rel_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+                assert rel_lock_info.queue[0].thread.name == ml_thread_name
+                assert not rel_lock_info.queue[0].event_flag
+                assert rel_lock_info.owner_count == -1
+                assert rel_lock_info.excl_wait_count == 0
+
+        else:
+            with SELockObtain(
+                a_se_lock,
+                obtain_mode=SELockObtainMode.Exclusive,
+                allow_recursive_obtain=True,
+            ):
+                obt_lock_info = a_se_lock.get_info()
+
+                assert len(obt_lock_info.queue) == 1
+                assert obt_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+                assert obt_lock_info.queue[0].thread.name == ml_thread_name
+                assert not obt_lock_info.queue[0].event_flag
+                assert obt_lock_info.owner_count == -1
+                assert obt_lock_info.excl_wait_count == 0
+
+                with SELockObtain(
+                    a_se_lock,
+                    obtain_mode=SELockObtainMode.Exclusive,
+                    allow_recursive_obtain=True,
+                ):
+                    obt_lock_info = a_se_lock.get_info()
+
+                    assert len(obt_lock_info.queue) == 1
+                    assert obt_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+                    assert obt_lock_info.queue[0].thread.name == ml_thread_name
+                    assert not obt_lock_info.queue[0].event_flag
+                    assert obt_lock_info.owner_count == -2
+                    assert obt_lock_info.excl_wait_count == 0
+
+                rel_lock_info = a_se_lock.get_info()
+
+                assert len(rel_lock_info.queue) == 1
+                assert rel_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+                assert rel_lock_info.queue[0].thread.name == ml_thread_name
+                assert not rel_lock_info.queue[0].event_flag
+                assert rel_lock_info.owner_count == -1
+                assert rel_lock_info.excl_wait_count == 0
 
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 0
         assert lock_info.owner_count == 0
 
+        ################################################################
+        # steps 13-12
+        # 13: obtain
+        # 14: recursive obtain
+        # 15: recursive obtain
+        # 16: release
+        # 17: release
+        # 18: release
+        ################################################################
         log_test_msg("about to do step 13", log_ver=log_ver)
 
         log_ver.add_pattern(pattern=ml_excl_obtain_pattern)
 
-        a_se_lock.obtain_excl()
-        lock_info = a_se_lock.get_info()
-        assert len(lock_info.queue) == 1
-        assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread.name == ml_thread_name
-        assert not lock_info.queue[0].event_flag
-        assert lock_info.owner_count == -1
-        assert lock_info.excl_wait_count == 0
-
         log_test_msg("about to do step 14", log_ver=log_ver)
 
         log_ver.add_pattern(pattern=ml_recursive_excl_continue_pattern_to_2)
-
-        a_se_lock.obtain_excl_recursive()
-
-        lock_info = a_se_lock.get_info()
-        assert len(lock_info.queue) == 1
-        assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread.name == ml_thread_name
-        assert not lock_info.queue[0].event_flag
-        assert lock_info.owner_count == -2
-        assert lock_info.excl_wait_count == 0
 
         log_test_msg("about to do step 15", log_ver=log_ver)
 
@@ -1550,20 +1755,9 @@ class TestSELockBasic:
             "SELock exclusive recursive obtain request continues "
             "exclusive control with recursion depth increased to 3 "
             f"for thread {ml_esc_thread_name}, "
-            "call sequence: python.py::pytest_pyfunc_call:[0-9]+ -> "
-            "test_se_lock.py::TestSELockBasic.test_se_lock_obtain_excl:[0-9]+"
+            f"call sequence: {ml_excl_call_seq}"
         )
         log_ver.add_pattern(pattern=ml_recursive_excl_continue_pattern_to_3)
-
-        a_se_lock.obtain_excl_recursive()
-
-        lock_info = a_se_lock.get_info()
-        assert len(lock_info.queue) == 1
-        assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread.name == ml_thread_name
-        assert not lock_info.queue[0].event_flag
-        assert lock_info.owner_count == -3
-        assert lock_info.excl_wait_count == 0
 
         log_test_msg("about to do step 16", log_ver=log_ver)
 
@@ -1571,39 +1765,182 @@ class TestSELockBasic:
             "SELock release request continues "
             "exclusive control with recursion depth reduced to 2 "
             f"for thread {ml_esc_thread_name}, "
-            "call sequence: python.py::pytest_pyfunc_call:[0-9]+ -> "
-            "test_se_lock.py::TestSELockBasic.test_se_lock_obtain_excl:[0-9]+"
+            f"call sequence: {ml_release_call_seq}"
         )
         log_ver.add_pattern(pattern=ml_recursive_release_pattern_to_2)
-
-        a_se_lock.release()
-        lock_info = a_se_lock.get_info()
-        assert len(lock_info.queue) == 1
-        assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread.name == ml_thread_name
-        assert not lock_info.queue[0].event_flag
-        assert lock_info.owner_count == -2
-        assert lock_info.excl_wait_count == 0
 
         log_test_msg("about to do step 17", log_ver=log_ver)
 
         log_ver.add_pattern(pattern=ml_recursive_release_pattern_to_1)
 
-        a_se_lock.release()
-
-        lock_info = a_se_lock.get_info()
-        assert len(lock_info.queue) == 1
-        assert lock_info.queue[0].mode == SELockObtainMode.Exclusive
-        assert lock_info.queue[0].thread.name == ml_thread_name
-        assert not lock_info.queue[0].event_flag
-        assert lock_info.owner_count == -1
-        assert lock_info.excl_wait_count == 0
-
         log_test_msg("about to do step 18", log_ver=log_ver)
 
         log_ver.add_pattern(pattern=ml_excl_release_pattern)
 
-        a_se_lock.release()
+        if ml_context_arg == ContextArg.NoContext:
+            a_se_lock.obtain_excl()
+
+            obt_lock_info = a_se_lock.get_info()
+            assert len(obt_lock_info.queue) == 1
+            assert obt_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+            assert obt_lock_info.queue[0].thread.name == ml_thread_name
+            assert not obt_lock_info.queue[0].event_flag
+            assert obt_lock_info.owner_count == -1
+            assert obt_lock_info.excl_wait_count == 0
+
+            a_se_lock.obtain_excl_recursive()
+
+            obt_lock_info = a_se_lock.get_info()
+            assert len(obt_lock_info.queue) == 1
+            assert obt_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+            assert obt_lock_info.queue[0].thread.name == ml_thread_name
+            assert not obt_lock_info.queue[0].event_flag
+            assert obt_lock_info.owner_count == -2
+            assert obt_lock_info.excl_wait_count == 0
+
+            a_se_lock.obtain_excl_recursive()
+
+            obt_lock_info = a_se_lock.get_info()
+            assert len(obt_lock_info.queue) == 1
+            assert obt_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+            assert obt_lock_info.queue[0].thread.name == ml_thread_name
+            assert not obt_lock_info.queue[0].event_flag
+            assert obt_lock_info.owner_count == -3
+            assert obt_lock_info.excl_wait_count == 0
+
+            a_se_lock.release()
+
+            rel_lock_info = a_se_lock.get_info()
+
+            assert len(rel_lock_info.queue) == 1
+            assert rel_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+            assert rel_lock_info.queue[0].thread.name == ml_thread_name
+            assert not rel_lock_info.queue[0].event_flag
+            assert rel_lock_info.owner_count == -2
+            assert rel_lock_info.excl_wait_count == 0
+
+            a_se_lock.release()
+
+            rel_lock_info = a_se_lock.get_info()
+
+            assert len(rel_lock_info.queue) == 1
+            assert rel_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+            assert rel_lock_info.queue[0].thread.name == ml_thread_name
+            assert not rel_lock_info.queue[0].event_flag
+            assert rel_lock_info.owner_count == -1
+            assert rel_lock_info.excl_wait_count == 0
+
+            a_se_lock.release()
+
+        elif ml_context_arg == ContextArg.ContextExclShare:
+            with SELockExcl(a_se_lock, allow_recursive_obtain=False):
+                obt_lock_info = a_se_lock.get_info()
+
+                assert len(obt_lock_info.queue) == 1
+                assert obt_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+                assert obt_lock_info.queue[0].thread.name == ml_thread_name
+                assert not obt_lock_info.queue[0].event_flag
+                assert obt_lock_info.owner_count == -1
+                assert obt_lock_info.excl_wait_count == 0
+
+                with SELockExcl(a_se_lock, allow_recursive_obtain=True):
+                    obt_lock_info = a_se_lock.get_info()
+
+                    assert len(obt_lock_info.queue) == 1
+                    assert obt_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+                    assert obt_lock_info.queue[0].thread.name == ml_thread_name
+                    assert not obt_lock_info.queue[0].event_flag
+                    assert obt_lock_info.owner_count == -2
+                    assert obt_lock_info.excl_wait_count == 0
+
+                    with SELockExcl(a_se_lock, allow_recursive_obtain=True):
+                        obt_lock_info = a_se_lock.get_info()
+
+                        assert len(obt_lock_info.queue) == 1
+                        assert obt_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+                        assert obt_lock_info.queue[0].thread.name == ml_thread_name
+                        assert not obt_lock_info.queue[0].event_flag
+                        assert obt_lock_info.owner_count == -3
+                        assert obt_lock_info.excl_wait_count == 0
+
+                    rel_lock_info = a_se_lock.get_info()
+
+                    assert len(rel_lock_info.queue) == 1
+                    assert rel_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+                    assert rel_lock_info.queue[0].thread.name == ml_thread_name
+                    assert not rel_lock_info.queue[0].event_flag
+                    assert rel_lock_info.owner_count == -2
+                    assert rel_lock_info.excl_wait_count == 0
+
+                rel_lock_info = a_se_lock.get_info()
+
+                assert len(rel_lock_info.queue) == 1
+                assert rel_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+                assert rel_lock_info.queue[0].thread.name == ml_thread_name
+                assert not rel_lock_info.queue[0].event_flag
+                assert rel_lock_info.owner_count == -1
+                assert rel_lock_info.excl_wait_count == 0
+
+        else:
+            with SELockObtain(
+                a_se_lock,
+                obtain_mode=SELockObtainMode.Exclusive,
+                allow_recursive_obtain=False,
+            ):
+                obt_lock_info = a_se_lock.get_info()
+
+                assert len(obt_lock_info.queue) == 1
+                assert obt_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+                assert obt_lock_info.queue[0].thread.name == ml_thread_name
+                assert not obt_lock_info.queue[0].event_flag
+                assert obt_lock_info.owner_count == -1
+                assert obt_lock_info.excl_wait_count == 0
+
+                with SELockObtain(
+                    a_se_lock,
+                    obtain_mode=SELockObtainMode.Exclusive,
+                    allow_recursive_obtain=True,
+                ):
+                    obt_lock_info = a_se_lock.get_info()
+
+                    assert len(obt_lock_info.queue) == 1
+                    assert obt_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+                    assert obt_lock_info.queue[0].thread.name == ml_thread_name
+                    assert not obt_lock_info.queue[0].event_flag
+                    assert obt_lock_info.owner_count == -2
+                    assert obt_lock_info.excl_wait_count == 0
+
+                    with SELockObtain(
+                        a_se_lock,
+                        obtain_mode=SELockObtainMode.Exclusive,
+                        allow_recursive_obtain=True,
+                    ):
+                        obt_lock_info = a_se_lock.get_info()
+
+                        assert len(obt_lock_info.queue) == 1
+                        assert obt_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+                        assert obt_lock_info.queue[0].thread.name == ml_thread_name
+                        assert not obt_lock_info.queue[0].event_flag
+                        assert obt_lock_info.owner_count == -3
+                        assert obt_lock_info.excl_wait_count == 0
+
+                    rel_lock_info = a_se_lock.get_info()
+
+                    assert len(rel_lock_info.queue) == 1
+                    assert rel_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+                    assert rel_lock_info.queue[0].thread.name == ml_thread_name
+                    assert not rel_lock_info.queue[0].event_flag
+                    assert rel_lock_info.owner_count == -2
+                    assert rel_lock_info.excl_wait_count == 0
+
+                rel_lock_info = a_se_lock.get_info()
+
+                assert len(rel_lock_info.queue) == 1
+                assert rel_lock_info.queue[0].mode == SELockObtainMode.Exclusive
+                assert rel_lock_info.queue[0].thread.name == ml_thread_name
+                assert not rel_lock_info.queue[0].event_flag
+                assert rel_lock_info.owner_count == -1
+                assert rel_lock_info.excl_wait_count == 0
 
         lock_info = a_se_lock.get_info()
         assert len(lock_info.queue) == 0
@@ -2144,7 +2481,7 @@ class TestSELock:
         a_lock = SELock()
 
         to_low = timeout_arg
-        to_high = timeout_arg * 1.2
+        to_high = timeout_arg * 1.3
 
         msgs_get_to = timeout_arg * 4 * 2
 
@@ -2509,11 +2846,6 @@ class TestSELock:
                         f1_item.lock_obtained = True
                         break
 
-            if req_num < num_initial_owners:
-                immediate_grant = True
-            else:
-                immediate_grant = False
-
             if mode == SELock._Mode.SHARE:
                 req_type_insert = "share"
                 grant_type_insert = "shared"
@@ -2546,18 +2878,16 @@ class TestSELock:
                 )
                 f1_release_call_seq = (
                     "test_se_lock.py::f1:[0-9]+ "
-                    f"-> se_lock.py::SELockObtain.__exit__:[0-9]+"
+                    "-> se_lock.py::SELockObtain.__exit__:[0-9]+"
                 )
 
             if req_num < num_initial_owners:
-                immediate_grant = True
                 f1_obtain_pattern = (
                     f"SELock {req_type_insert} obtain request granted immediate "
                     f"{grant_type_insert} control to thread {f1_esc_thread_name}, "
                     f"call sequence: {f1_obtain_call_seq}"
                 )
             else:
-                immediate_grant = False
                 f1_obtain_pattern = (
                     f"SELock {req_type_insert} obtain request for thread "
                     f"{f1_esc_thread_name} waiting for SELock, call sequence: "
