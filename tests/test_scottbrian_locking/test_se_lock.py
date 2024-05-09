@@ -137,12 +137,18 @@ class TestSELockErrors:
         # mainline
         ################################################################
         log_ver = LogVer(log_name="scottbrian_locking.se_lock")
+
+        ml_call_seq = (
+            "Request call sequence: python.py::pytest_pyfunc_call:[0-9]+ -> "
+            "test_se_lock.py::TestSELockErrors.test_lock_verify_bad_input:[0-9]+"
+        )
+
         a_lock = SELock()
 
         ml_error_msg = (
             "lock_verify raising SELockInputError. Nothing was requested to "
-            "be verified with exp_q=None and verify_structures=False."
-        )
+            "be verified with exp_q=None and verify_structures=False. "
+        ) + ml_call_seq
 
         log_ver.add_pattern(pattern=ml_error_msg, level=logging.ERROR)
         with pytest.raises(SELockInputError, match=ml_error_msg):
@@ -156,8 +162,8 @@ class TestSELockErrors:
             "lock_verify raising SELockInputError. exp_q must be "
             "specified if any of exp_owner_count, exp_excl_wait_count, or "
             "timeout is specified. exp_q=None, exp_owner_count=0, "
-            "exp_excl_wait_count=None, timeout=None."
-        )
+            "exp_excl_wait_count=None, timeout=None. "
+        ) + ml_call_seq
 
         log_ver.add_pattern(pattern=ml_error_msg, level=logging.ERROR)
         with pytest.raises(SELockInputError, match=ml_error_msg):
@@ -167,8 +173,8 @@ class TestSELockErrors:
             "lock_verify raising SELockInputError. exp_q must be "
             "specified if any of exp_owner_count, exp_excl_wait_count, or "
             "timeout is specified. exp_q=None, exp_owner_count=None, "
-            "exp_excl_wait_count=0, timeout=None."
-        )
+            "exp_excl_wait_count=0, timeout=None. "
+        ) + ml_call_seq
 
         log_ver.add_pattern(pattern=ml_error_msg, level=logging.ERROR)
         with pytest.raises(SELockInputError, match=ml_error_msg):
@@ -178,8 +184,8 @@ class TestSELockErrors:
             "lock_verify raising SELockInputError. exp_q must be "
             "specified if any of exp_owner_count, exp_excl_wait_count, or "
             "timeout is specified. exp_q=None, exp_owner_count=None, "
-            "exp_excl_wait_count=None, timeout=0."
-        )
+            "exp_excl_wait_count=None, timeout=0. "
+        ) + ml_call_seq
 
         log_ver.add_pattern(pattern=ml_error_msg, level=logging.ERROR)
         with pytest.raises(SELockInputError, match=ml_error_msg):
@@ -192,8 +198,8 @@ class TestSELockErrors:
                         "lock_verify raising SELockInputError. exp_q must be "
                         "specified if any of exp_owner_count, exp_excl_wait_count, or "
                         f"timeout is specified. exp_q=None, {exp_owner_count=}, "
-                        f"{exp_excl_wait_count=}, {timeout=}."
-                    )
+                        f"{exp_excl_wait_count=}, {timeout=}. "
+                    ) + ml_call_seq
                     if not (
                         exp_owner_count is None
                         and exp_excl_wait_count is None
@@ -219,8 +225,8 @@ class TestSELockErrors:
                         ml_error_msg = (
                             "lock_verify raising SELockInputError. Nothing was "
                             "requested to be verified with exp_q=None and "
-                            "verify_structures=False."
-                        )
+                            "verify_structures=False. "
+                        ) + ml_call_seq
 
                         log_ver.add_pattern(pattern=ml_error_msg, level=logging.ERROR)
                         with pytest.raises(SELockInputError, match=ml_error_msg):
@@ -330,6 +336,166 @@ class TestSELockErrors:
                                     timeout=timeout,
                                     verify_structures=verify_structures,
                                 )
+        ################################################################
+        # check log results
+        ################################################################
+        match_results = log_ver.get_match_results(caplog=caplog)
+        log_ver.print_match_results(match_results, print_matched=True)
+        log_ver.verify_match_results(match_results)
+
+    ####################################################################
+    # test_verify_lock_timeout
+    ####################################################################
+    def test_verify_lock_timeout(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Test that second obtain request fails.
+
+        Args:
+            caplog: pytest.LogCaptureFixture
+
+        """
+        ################################################################
+        # mainline
+        ################################################################
+        log_ver = LogVer(log_name="scottbrian_locking.se_lock")
+
+        a_lock = SELock()
+
+        ml_thread = threading.current_thread()
+
+        ml_call_seq = (
+            "Request call sequence: python.py::pytest_pyfunc_call:[0-9]+ -> "
+            "test_se_lock.py::TestSELockErrors.test_verify_lock_timeout:[0-9]+"
+        )
+
+        a_lock.verify_lock(exp_q=[], exp_owner_count=0, exp_excl_wait_count=0)
+
+        # verify lock with expected q for lock not yet obtained
+
+        ml_exp_q = [
+            LockItem(
+                mode=SELockObtainMode.Share,
+                event_flag=True,
+                thread=ml_thread,
+            )
+        ]
+
+        ml_error_msg = (
+            re.escape(
+                f"lock_verify raising LockVerifyError. exp_q={ml_exp_q} , "
+                f"lock_info.queue=[], exp_owner_count=1, "
+                f"lock_info.owner_count=0, exp_excl_wait_count=0, "
+                f"lock_info.excl_wait_count=0, timeout=None. "
+            )
+            + ml_call_seq
+        )
+        log_ver.add_pattern(pattern=ml_error_msg, level=logging.ERROR)
+        with pytest.raises(LockVerifyError, match=ml_error_msg):
+            a_lock.verify_lock(
+                exp_q=ml_exp_q,
+                exp_owner_count=1,
+                exp_excl_wait_count=0,
+                verify_structures=True,
+            )
+
+        ml_error_msg = (
+            re.escape(
+                f"lock_verify raising LockVerifyError. exp_q={ml_exp_q} , "
+                f"lock_info.queue=[], exp_owner_count=1, "
+                f"lock_info.owner_count=0, exp_excl_wait_count=0, "
+                f"lock_info.excl_wait_count=0, timeout=None. "
+            )
+            + ml_call_seq
+        )
+        log_ver.add_pattern(pattern=ml_error_msg, level=logging.ERROR)
+        with pytest.raises(LockVerifyError, match=ml_error_msg):
+            a_lock.verify_lock(
+                exp_q=ml_exp_q,
+                exp_owner_count=1,
+                exp_excl_wait_count=0,
+                verify_structures=True,
+                timeout=None,
+            )
+
+        ml_error_msg = (
+            re.escape(
+                f"lock_verify raising LockVerifyError. exp_q={ml_exp_q} , "
+                f"lock_info.queue=[], exp_owner_count=1, "
+                f"lock_info.owner_count=0, exp_excl_wait_count=0, "
+                f"lock_info.excl_wait_count=0, timeout=0. "
+            )
+            + ml_call_seq
+        )
+        log_ver.add_pattern(pattern=ml_error_msg, level=logging.ERROR)
+
+        with pytest.raises(LockVerifyError, match=ml_error_msg):
+            a_lock.verify_lock(
+                exp_q=ml_exp_q,
+                exp_owner_count=1,
+                exp_excl_wait_count=0,
+                verify_structures=True,
+                timeout=0,
+            )
+
+        ml_error_msg = (
+            re.escape(
+                f"lock_verify raising LockVerifyError. exp_q={ml_exp_q} , "
+                f"lock_info.queue=[], exp_owner_count=1, "
+                f"lock_info.owner_count=0, exp_excl_wait_count=0, "
+                f"lock_info.excl_wait_count=0, timeout=0.1. "
+            )
+            + ml_call_seq
+        )
+        log_ver.add_pattern(pattern=ml_error_msg, level=logging.ERROR)
+        with pytest.raises(LockVerifyError, match=ml_error_msg):
+            a_lock.verify_lock(
+                exp_q=ml_exp_q,
+                exp_owner_count=1,
+                exp_excl_wait_count=0,
+                verify_structures=True,
+                timeout=0.1,
+            )
+
+        ml_error_msg = (
+            re.escape(
+                f"lock_verify raising LockVerifyError. exp_q={ml_exp_q} , "
+                f"lock_info.queue=[], exp_owner_count=1, "
+                f"lock_info.owner_count=0, exp_excl_wait_count=0, "
+                f"lock_info.excl_wait_count=0, timeout=1. "
+            )
+            + ml_call_seq
+        )
+        log_ver.add_pattern(pattern=ml_error_msg, level=logging.ERROR)
+        with pytest.raises(LockVerifyError, match=ml_error_msg):
+            a_lock.verify_lock(
+                exp_q=ml_exp_q,
+                exp_owner_count=1,
+                exp_excl_wait_count=0,
+                verify_structures=True,
+                timeout=1,
+            )
+
+        ml_error_msg = (
+            re.escape(
+                f"lock_verify raising LockVerifyError. exp_q={ml_exp_q} , "
+                f"lock_info.queue=[], exp_owner_count=1, "
+                f"lock_info.owner_count=0, exp_excl_wait_count=0, "
+                f"lock_info.excl_wait_count=0, timeout=1.23. "
+            )
+            + ml_call_seq
+        )
+        log_ver.add_pattern(pattern=ml_error_msg, level=logging.ERROR)
+        with pytest.raises(LockVerifyError, match=ml_error_msg):
+            a_lock.verify_lock(
+                exp_q=ml_exp_q,
+                exp_owner_count=1,
+                exp_excl_wait_count=0,
+                verify_structures=True,
+                timeout=1.23,
+            )
+
         ################################################################
         # check log results
         ################################################################
@@ -770,6 +936,12 @@ class TestSELockErrors:
             """Function that tries to release lock while waiting."""
             # a_lock.obtain(mode=SELock._Mode.EXCL)
             f3_thread_name = re.escape(f"{f3_thread.name}")
+
+            f3_call_seq = (
+                "Request call sequence: threading.py::Thread.run:[0-9]+ "
+                "-> test_se_lock.py::f3:[0-9]+"
+            )
+
             f3_pattern = (
                 f"SELock exclusive obtain request for thread {f3_thread_name} "
                 "waiting for SELock, call sequence: "
@@ -798,16 +970,19 @@ class TestSELockErrors:
                 verify_structures=False,
             )
 
-            f3_error_msg = re.escape(
-                "lock_verify raising LockVerifyError. owner_count_error=False, "
-                "wait_count_error=False, excl_event_flag_error=True, "
-                f"share_event_flag_error=False, exp_q={f3_exp_q}, "
-                f"lock_info.queue={f3_exp_q}, exp_owner_count=-1, "
-                "lock_info.owner_count=-1, exp_excl_wait_count=1, "
-                "lock_info.excl_wait_count=1, timeout=None, "
-                "calc_owner_count=-1, calc_excl_wait_count=1, "
-                "idx_of_first_excl_wait=1, idx_of_first_excl_event_flag=1, "
-                "idx_of_first_share_wait=-1, idx_of_first_share_event_flag=-1."
+            f3_error_msg = (
+                re.escape(
+                    "lock_verify raising LockVerifyError. owner_count_error=False, "
+                    "wait_count_error=False, excl_event_flag_error=True, "
+                    f"share_event_flag_error=False, exp_q={f3_exp_q}, "
+                    f"lock_info.queue={f3_exp_q}, exp_owner_count=-1, "
+                    "lock_info.owner_count=-1, exp_excl_wait_count=1, "
+                    "lock_info.excl_wait_count=1, timeout=None, "
+                    "calc_owner_count=-1, calc_excl_wait_count=1, "
+                    "idx_of_first_excl_wait=1, idx_of_first_excl_event_flag=1, "
+                    "idx_of_first_share_wait=-1, idx_of_first_share_event_flag=-1. "
+                )
+                + f3_call_seq
             )
 
             log_ver.add_pattern(pattern=f3_error_msg, level=logging.ERROR)
@@ -840,16 +1015,19 @@ class TestSELockErrors:
                 verify_structures=False,
             )
 
-            f3_error_msg = re.escape(
-                "lock_verify raising LockVerifyError. owner_count_error=False, "
-                "wait_count_error=False, excl_event_flag_error=True, "
-                f"share_event_flag_error=False, exp_q=None, "
-                f"lock_info.queue={exp_q}, exp_owner_count=None, "
-                "lock_info.owner_count=-1, exp_excl_wait_count=None, "
-                "lock_info.excl_wait_count=1, timeout=None, "
-                "calc_owner_count=-1, calc_excl_wait_count=1, "
-                "idx_of_first_excl_wait=1, idx_of_first_excl_event_flag=1, "
-                "idx_of_first_share_wait=-1, idx_of_first_share_event_flag=-1."
+            f3_error_msg = (
+                re.escape(
+                    "lock_verify raising LockVerifyError. owner_count_error=False, "
+                    "wait_count_error=False, excl_event_flag_error=True, "
+                    f"share_event_flag_error=False, exp_q=None, "
+                    f"lock_info.queue={exp_q}, exp_owner_count=None, "
+                    "lock_info.owner_count=-1, exp_excl_wait_count=None, "
+                    "lock_info.excl_wait_count=1, timeout=None, "
+                    "calc_owner_count=-1, calc_excl_wait_count=1, "
+                    "idx_of_first_excl_wait=1, idx_of_first_excl_event_flag=1, "
+                    "idx_of_first_share_wait=-1, idx_of_first_share_event_flag=-1. "
+                )
+                + f3_call_seq
             )
             log_ver.add_pattern(pattern=f3_error_msg, level=logging.ERROR)
             with pytest.raises(LockVerifyError, match=f3_error_msg):
@@ -859,6 +1037,12 @@ class TestSELockErrors:
         # mainline
         ################################################################
         log_ver = LogVer(log_name="scottbrian_locking.se_lock")
+
+        ml_call_seq = (
+            "Request call sequence: python.py::pytest_pyfunc_call:[0-9]+ -> "
+            "test_se_lock.py::TestSELockErrors."
+            "test_se_lock_release_by_exclusive_waiter:[0-9]+"
+        )
 
         a_lock = SELock()
 
@@ -941,16 +1125,19 @@ class TestSELockErrors:
             verify_structures=False,  # avoid error for now
         )
 
-        mainline_error_msg = re.escape(
-            "lock_verify raising LockVerifyError. owner_count_error=False, "
-            "wait_count_error=False, excl_event_flag_error=True, "
-            f"share_event_flag_error=False, exp_q={exp_q}, "
-            f"lock_info.queue={exp_q}, exp_owner_count=-1, "
-            "lock_info.owner_count=-1, exp_excl_wait_count=1, "
-            "lock_info.excl_wait_count=1, timeout=None, "
-            "calc_owner_count=-1, calc_excl_wait_count=1, "
-            "idx_of_first_excl_wait=1, idx_of_first_excl_event_flag=1, "
-            "idx_of_first_share_wait=-1, idx_of_first_share_event_flag=-1."
+        mainline_error_msg = (
+            re.escape(
+                "lock_verify raising LockVerifyError. owner_count_error=False, "
+                "wait_count_error=False, excl_event_flag_error=True, "
+                f"share_event_flag_error=False, exp_q={exp_q}, "
+                f"lock_info.queue={exp_q}, exp_owner_count=-1, "
+                "lock_info.owner_count=-1, exp_excl_wait_count=1, "
+                "lock_info.excl_wait_count=1, timeout=None, "
+                "calc_owner_count=-1, calc_excl_wait_count=1, "
+                "idx_of_first_excl_wait=1, idx_of_first_excl_event_flag=1, "
+                "idx_of_first_share_wait=-1, idx_of_first_share_event_flag=-1. "
+            )
+            + ml_call_seq
         )
         log_ver.add_pattern(pattern=mainline_error_msg, level=logging.ERROR)
         with pytest.raises(LockVerifyError, match=mainline_error_msg):
@@ -975,16 +1162,19 @@ class TestSELockErrors:
             verify_structures=False,
         )
 
-        mainline_error_msg = re.escape(
-            "lock_verify raising LockVerifyError. owner_count_error=False, "
-            "wait_count_error=False, excl_event_flag_error=True, "
-            f"share_event_flag_error=False, exp_q=None, "
-            f"lock_info.queue={exp_q}, exp_owner_count=None, "
-            "lock_info.owner_count=-1, exp_excl_wait_count=None, "
-            "lock_info.excl_wait_count=1, timeout=None, "
-            "calc_owner_count=-1, calc_excl_wait_count=1, "
-            "idx_of_first_excl_wait=1, idx_of_first_excl_event_flag=1, "
-            "idx_of_first_share_wait=-1, idx_of_first_share_event_flag=-1."
+        mainline_error_msg = (
+            re.escape(
+                "lock_verify raising LockVerifyError. owner_count_error=False, "
+                "wait_count_error=False, excl_event_flag_error=True, "
+                f"share_event_flag_error=False, exp_q=None, "
+                f"lock_info.queue={exp_q}, exp_owner_count=None, "
+                "lock_info.owner_count=-1, exp_excl_wait_count=None, "
+                "lock_info.excl_wait_count=1, timeout=None, "
+                "calc_owner_count=-1, calc_excl_wait_count=1, "
+                "idx_of_first_excl_wait=1, idx_of_first_excl_event_flag=1, "
+                "idx_of_first_share_wait=-1, idx_of_first_share_event_flag=-1. "
+            )
+            + ml_call_seq
         )
 
         log_ver.add_pattern(pattern=mainline_error_msg, level=logging.ERROR)
@@ -1043,6 +1233,12 @@ class TestSELockErrors:
         def f5() -> None:
             """Function that tries to release lock while waiting."""
             f5_thread_name = re.escape(f"{f5_thread.name}")
+
+            f5_call_seq = (
+                "Request call sequence: threading.py::Thread.run:[0-9]+ "
+                "-> test_se_lock.py::f5:[0-9]+"
+            )
+
             f5_pattern = (
                 f"SELock share obtain request for thread {f5_thread_name} "
                 "waiting for SELock, call sequence: "
@@ -1073,16 +1269,19 @@ class TestSELockErrors:
                 verify_structures=False,
             )
 
-            f5_verify_error_msg = re.escape(
-                "lock_verify raising LockVerifyError. owner_count_error=False, "
-                "wait_count_error=False, excl_event_flag_error=False, "
-                f"share_event_flag_error=True, exp_q={f5_exp_q}, "
-                f"lock_info.queue={f5_exp_q}, exp_owner_count=-1, "
-                "lock_info.owner_count=-1, exp_excl_wait_count=0, "
-                "lock_info.excl_wait_count=0, timeout=None, "
-                "calc_owner_count=-1, calc_excl_wait_count=0, "
-                "idx_of_first_excl_wait=-1, idx_of_first_excl_event_flag=-1, "
-                "idx_of_first_share_wait=-1, idx_of_first_share_event_flag=1."
+            f5_verify_error_msg = (
+                re.escape(
+                    "lock_verify raising LockVerifyError. owner_count_error=False, "
+                    "wait_count_error=False, excl_event_flag_error=False, "
+                    f"share_event_flag_error=True, exp_q={f5_exp_q}, "
+                    f"lock_info.queue={f5_exp_q}, exp_owner_count=-1, "
+                    "lock_info.owner_count=-1, exp_excl_wait_count=0, "
+                    "lock_info.excl_wait_count=0, timeout=None, "
+                    "calc_owner_count=-1, calc_excl_wait_count=0, "
+                    "idx_of_first_excl_wait=-1, idx_of_first_excl_event_flag=-1, "
+                    "idx_of_first_share_wait=-1, idx_of_first_share_event_flag=1. "
+                )
+                + f5_call_seq
             )
 
             log_ver.add_pattern(pattern=f5_verify_error_msg, level=logging.ERROR)
@@ -1127,6 +1326,12 @@ class TestSELockErrors:
         # mainline
         ################################################################
         log_ver = LogVer(log_name="scottbrian_locking.se_lock")
+
+        ml_call_seq = (
+            "Request call sequence: python.py::pytest_pyfunc_call:[0-9]+ -> "
+            "test_se_lock.py::TestSELockErrors."
+            "test_se_lock_release_by_shared_waiter:[0-9]+"
+        )
 
         a_lock = SELock()
 
@@ -1210,16 +1415,19 @@ class TestSELockErrors:
             verify_structures=False,
         )
 
-        mainline_error_msg = re.escape(
-            "lock_verify raising LockVerifyError. owner_count_error=False, "
-            "wait_count_error=False, excl_event_flag_error=False, "
-            f"share_event_flag_error=True, exp_q={exp_q}, "
-            f"lock_info.queue={exp_q}, exp_owner_count=-1, "
-            "lock_info.owner_count=-1, exp_excl_wait_count=0, "
-            "lock_info.excl_wait_count=0, timeout=None, "
-            "calc_owner_count=-1, calc_excl_wait_count=0, "
-            "idx_of_first_excl_wait=-1, idx_of_first_excl_event_flag=-1, "
-            "idx_of_first_share_wait=-1, idx_of_first_share_event_flag=1."
+        mainline_error_msg = (
+            re.escape(
+                "lock_verify raising LockVerifyError. owner_count_error=False, "
+                "wait_count_error=False, excl_event_flag_error=False, "
+                f"share_event_flag_error=True, exp_q={exp_q}, "
+                f"lock_info.queue={exp_q}, exp_owner_count=-1, "
+                "lock_info.owner_count=-1, exp_excl_wait_count=0, "
+                "lock_info.excl_wait_count=0, timeout=None, "
+                "calc_owner_count=-1, calc_excl_wait_count=0, "
+                "idx_of_first_excl_wait=-1, idx_of_first_excl_event_flag=-1, "
+                "idx_of_first_share_wait=-1, idx_of_first_share_event_flag=1. "
+            )
+            + ml_call_seq
         )
 
         log_ver.add_pattern(pattern=mainline_error_msg, level=logging.ERROR)
@@ -1255,16 +1463,19 @@ class TestSELockErrors:
                 thread=f5_thread,
             ),
         ]
-        mainline_error_msg = re.escape(
-            "lock_verify raising LockVerifyError. owner_count_error=False, "
-            "wait_count_error=False, excl_event_flag_error=False, "
-            f"share_event_flag_error=True, exp_q={exp_q}, "
-            f"lock_info.queue={exp_q}, exp_owner_count=-1, "
-            "lock_info.owner_count=-1, exp_excl_wait_count=0, "
-            "lock_info.excl_wait_count=0, timeout=None, "
-            "calc_owner_count=-1, calc_excl_wait_count=0, "
-            "idx_of_first_excl_wait=-1, idx_of_first_excl_event_flag=-1, "
-            "idx_of_first_share_wait=-1, idx_of_first_share_event_flag=1."
+        mainline_error_msg = (
+            re.escape(
+                "lock_verify raising LockVerifyError. owner_count_error=False, "
+                "wait_count_error=False, excl_event_flag_error=False, "
+                f"share_event_flag_error=True, exp_q={exp_q}, "
+                f"lock_info.queue={exp_q}, exp_owner_count=-1, "
+                "lock_info.owner_count=-1, exp_excl_wait_count=0, "
+                "lock_info.excl_wait_count=0, timeout=None, "
+                "calc_owner_count=-1, calc_excl_wait_count=0, "
+                "idx_of_first_excl_wait=-1, idx_of_first_excl_event_flag=-1, "
+                "idx_of_first_share_wait=-1, idx_of_first_share_event_flag=1. "
+            )
+            + ml_call_seq
         )
         log_ver.add_pattern(pattern=mainline_error_msg, level=logging.ERROR)
         with pytest.raises(LockVerifyError, match=mainline_error_msg):
@@ -2845,6 +3056,7 @@ class TestSELock:
                         assert f1_item.lock_obtained is False
                         f1_item.lock_obtained = True
                         break
+                a_lock.verify_lock()
 
             if mode == SELock._Mode.SHARE:
                 req_type_insert = "share"
@@ -2973,6 +3185,8 @@ class TestSELock:
             release_grant_list: list[ReleaseGrant]
 
         a_lock = SELock()
+
+        a_lock.verify_lock()
 
         thread_event_list = []
 
@@ -3151,6 +3365,8 @@ class TestSELock:
                 work_excl2 -= 1
 
             assert len(a_lock) == request_number + 1
+
+        a_lock.verify_lock()
 
         ################################################################
         # check log results

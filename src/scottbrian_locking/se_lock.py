@@ -985,10 +985,12 @@ class SELock:
                 specified, exp_q must also be specified.
             exp_excl_wait_count: specifies the expected exclusive wait
                 count. If specified, exp_q must also be specified.
-            timeout: if specified, specifies the time allowed for the
-                lock to be in the specified state. If not specified, the
-                lock must already be in the specified state at entry. If
-                specified, exp_q must also be specified.
+            timeout: A non-zero positive value specifies the time
+                allowed for the lock to get into the specified state.
+                If not specified or a value of zero or less is
+                specified, the lock must already be in the specified
+                state at entry. Note that *exp_q* must also be
+                specified.
             verify_structures: If True, verify the lock structures
         Raises:
             LockVerifyError: the lock failed to verify, or failed to
@@ -1000,7 +1002,8 @@ class SELock:
             if not verify_structures:
                 error_msg = (
                     "lock_verify raising SELockInputError. Nothing was requested to "
-                    f"be verified with {exp_q=} and {verify_structures=}."
+                    f"be verified with {exp_q=} and {verify_structures=}. "
+                    f"Request call sequence: {call_seq(latest=1, depth=2)}"
                 )
                 self.logger.error(error_msg)
                 raise SELockInputError(error_msg)
@@ -1013,7 +1016,8 @@ class SELock:
                     "lock_verify raising SELockInputError. exp_q must be "
                     "specified if any of exp_owner_count, exp_excl_wait_count, or "
                     f"timeout is specified. {exp_q=}, {exp_owner_count=}, "
-                    f"{exp_excl_wait_count=}, {timeout=}."
+                    f"{exp_excl_wait_count=}, {timeout=}. "
+                    f"Request call sequence: {call_seq(latest=1, depth=2)}"
                 )
                 self.logger.error(error_msg)
                 raise SELockInputError(error_msg)
@@ -1035,12 +1039,14 @@ class SELock:
                     )
                 ):
                     break
-                if timeout is None or timer.is_expired():
+
+                if timeout is None or timeout <= 0 or timer.is_expired():
                     error_msg = (
                         f"lock_verify raising LockVerifyError. {exp_q=} , "
                         f"{lock_info.queue=}, {exp_owner_count=}, "
                         f"{lock_info.owner_count=}, {exp_excl_wait_count=}, "
-                        f"{lock_info.excl_wait_count=}, {timeout=}"
+                        f"{lock_info.excl_wait_count=}, {timeout=}. "
+                        f"Request call sequence: {call_seq(latest=1, depth=2)}"
                     )
                     self.logger.error(error_msg)
                     raise LockVerifyError(error_msg)
@@ -1110,7 +1116,8 @@ class SELock:
                     f"{lock_info.excl_wait_count=}, {timeout=}, "
                     f"{calc_owner_count=}, {calc_excl_wait_count=}, "
                     f"{idx_of_first_excl_wait=}, {idx_of_first_excl_event_flag=}, "
-                    f"{idx_of_first_share_wait=}, {idx_of_first_share_event_flag=}."
+                    f"{idx_of_first_share_wait=}, {idx_of_first_share_event_flag=}. "
+                    f"Request call sequence: {call_seq(latest=1, depth=2)}"
                 )
                 self.logger.error(error_msg)
                 raise LockVerifyError(error_msg)
