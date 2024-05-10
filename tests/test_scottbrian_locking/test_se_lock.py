@@ -836,8 +836,8 @@ class TestSELockErrors:
 
         ml_pattern = (
             "SELock exclusive obtain request for thread "
-            f"{threading.current_thread().name} waiting "
-            "for SELock, call sequence: python.py::pytest_pyfunc_call:[0-9]+ -> "
+            f"{threading.current_thread().name} waiting for SELock, timeout=None, "
+            "call sequence: python.py::pytest_pyfunc_call:[0-9]+ -> "
             "test_se_lock.py::TestSELockErrors."
             "test_se_lock_release_owner_not_alive:[0-9]+"
         )
@@ -944,7 +944,7 @@ class TestSELockErrors:
 
             f3_pattern = (
                 f"SELock exclusive obtain request for thread {f3_thread_name} "
-                "waiting for SELock, call sequence: "
+                "waiting for SELock, timeout=None, call sequence: "
                 "threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f3:[0-9]+"
             )
             log_ver.add_pattern(pattern=f3_pattern)
@@ -1241,7 +1241,7 @@ class TestSELockErrors:
 
             f5_pattern = (
                 f"SELock share obtain request for thread {f5_thread_name} "
-                "waiting for SELock, call sequence: "
+                "waiting for SELock, timeout=None, call sequence: "
                 "threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f5:[0-9]+"
             )
             log_ver.add_pattern(pattern=f5_pattern)
@@ -1501,6 +1501,63 @@ class TestSELockBasic:
     """Class TestSELockBasic."""
 
     ####################################################################
+    # test_se_wait_time_race
+    ####################################################################
+    @pytest.mark.parametrize("timeout_arg", (0, 0.5, 1))
+    def test_se_wait_time_race(self, timeout_arg: float) -> None:
+        """Force timeout path in wait_for_lock.
+
+        We want to timeout in SELock._wait_for_timeout and then, after
+        getting the se_lock_lock, we discover that the event is now
+        posted and return to grant the lock. We will do this by getting
+        to se_lock_lock here to force the path.
+
+        Args:
+            timeout_arg: 0 = no timeout, else num seconds to timeout
+
+        """
+
+        def f1() -> None:
+            a_lock.obtain_excl()
+            ml_event1.set()
+            ml_event2.wait()
+            a_lock.release()
+
+        def f2() -> None:
+            if timeout_arg == 0:
+                a_lock.obtain_excl()
+            else:
+                a_lock.obtain_excl(timeout=timeout_arg)
+            a_lock.release()
+
+        ################################################################
+        # mainline
+        ################################################################
+        a_lock = SELock()
+
+        ml_event1 = threading.Event()
+        ml_event2 = threading.Event()
+
+        f1_thread = threading.Thread(target=f1)
+        f2_thread = threading.Thread(target=f2)
+
+        f1_thread.start()
+
+        ml_event1.wait()
+
+        f2_thread.start()
+
+        with a_lock.se_lock_lock:
+            ml_event2.set()
+            if timeout_arg == 0:
+                time.sleep(4)
+            else:
+                time.sleep(timeout_arg + 1)
+
+        f1_thread.join()
+        f2_thread.join()
+
+    ####################################################################
     # test_se_lock_repr
     ####################################################################
     def test_se_lock_repr(self) -> None:
@@ -1555,7 +1612,7 @@ class TestSELockBasic:
             )
             ml_release_call_seq = (
                 "test_se_lock.py::TestSELockBasic.test_se_lock_obtain_excl:[0-9]+ "
-                f"-> se_lock.py::SELockExcl.__exit__:[0-9]+"
+                "-> se_lock.py::SELockExcl.__exit__:[0-9]+"
             )
 
         else:
@@ -2272,7 +2329,7 @@ class TestSELockBasic:
             f5_esc_thread_name = re.escape(f"{f5_thread.name}")
             f5_excl_wait_pattern = (
                 f"SELock share obtain request for thread {f5_esc_thread_name} "
-                "waiting for SELock, call sequence: "
+                "waiting for SELock, timeout=None, call sequence: "
                 "threading.py::Thread.run:[0-9]+ -> test_se_lock.py::f5:[0-9]+"
             )
             log_ver.add_pattern(pattern=f5_excl_wait_pattern)
@@ -2731,7 +2788,7 @@ class TestSELock:
 
         ml_excl_wait_pattern = (
             f"SELock exclusive obtain request for thread {ml_esc_thread_name} "
-            "waiting for SELock, "
+            f"waiting for SELock, timeout={timeout_arg}, "
             f"call sequence: {ml_excl_call_seq}"
         )
         log_ver.add_pattern(pattern=ml_excl_wait_pattern)
@@ -2783,7 +2840,7 @@ class TestSELock:
 
         ml_share_wait_pattern = (
             f"SELock share obtain request for thread {ml_esc_thread_name} "
-            "waiting for SELock, "
+            f"waiting for SELock, timeout={timeout_arg}, "
             f"call sequence: {ml_share_call_seq}"
         )
         log_ver.add_pattern(pattern=ml_share_wait_pattern)
@@ -3102,8 +3159,8 @@ class TestSELock:
             else:
                 f1_obtain_pattern = (
                     f"SELock {req_type_insert} obtain request for thread "
-                    f"{f1_esc_thread_name} waiting for SELock, call sequence: "
-                    f"{f1_obtain_call_seq}"
+                    f"{f1_esc_thread_name} waiting for SELock, timeout=None, "
+                    f"call sequence: {f1_obtain_call_seq}"
                 )
 
             log_ver.add_pattern(pattern=f1_obtain_pattern)
@@ -3279,6 +3336,7 @@ class TestSELock:
                 # verify
                 assert a_lock.owner_wait_q[-1].thread is a_thread
                 assert not a_lock.owner_wait_q[-1].event.is_set()
+                a_lock.verify_lock()
 
         work_shr1 = num_share_requests1_arg
         work_excl1 = num_excl_requests1_arg

@@ -800,13 +800,12 @@ class SELock:
         # we continue to loop checking the owner thread (unless it was
         # smaller than WAIT_TIMEOUT in which case we will timeout the
         # request the first time we check that current lock owner.
-
         timer = Timer(timeout=timeout)
 
         if self.debug_logging_enabled:
             self.logger.debug(
                 f"{req_type} for thread {threading.current_thread().name} waiting "
-                f"for SELock, call sequence: {call_seq(latest=2, depth=2)}"
+                f"for SELock, {timeout=}, call sequence: {call_seq(latest=2, depth=2)}"
             )
         while True:
             remaining_time = timer.remaining_time()
@@ -992,6 +991,7 @@ class SELock:
                 state at entry. Note that *exp_q* must also be
                 specified.
             verify_structures: If True, verify the lock structures
+
         Raises:
             LockVerifyError: the lock failed to verify, or failed to
                 reach the expected state within the time specified for
