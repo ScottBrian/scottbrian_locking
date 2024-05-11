@@ -4,8 +4,8 @@
 SELock
 ========
 
-The SELock is a shared/exclusive lock that you can use to safely read
-from and write to resources in a multi-threaded application.
+The SELock is a shared/exclusive lock that you can use to coordinate
+read and write access to a resource in a multithreaded application.
 
 The SELock does not actually protect resources directly. Instead, the
 SELock provide coordination by blocking threads when they request a lock
@@ -15,13 +15,13 @@ from or write to a resource.
 
 The application must first instatiate an SELock object that can be
 accessed by the threads in the application. When a thread wants to read
-from a resource it requests the lock for shared mode. If the lock is
-currently not held or is currently held by other threads that in
-shared mode, and no threads are waiting for the lock for exclusive mode,
+from a resource, it requests the lock for shared mode. If the lock is
+currently not held or is currently held in shared mode by other threads,
+and no threads are waiting for the lock for exclusive mode,
 the new request is granted immediately. For all other cases, the request
 is queued and blocked until the lock become available.
 
-When a thread wants to write to a resource it requests the lock
+When a thread wants to write to a resource, it requests the lock
 in exclusive mode. If the lock is currently not held, the new request is
 granted immediately. For all other cases, the request is queued and
 blocked until the lock become available.
@@ -38,7 +38,7 @@ The SELock provide two ways to use the lock:
 
 
 :Example: use methods obtain_excl, obtain_share, and release to
-          coordinate access to a shared resource
+          coordinate access to a resource
 
 >>> from scottbrian_locking.se_lock import SELock
 >>> a_lock = SELock()
@@ -60,7 +60,7 @@ lock obtained in shared mode
 
 
 :Example: use SELockExcl and SELockShare context managers to coordinate
-          access to a shared resource
+          access to a resource
 
 >>> from scottbrian_locking.se_lock import (SELock, SELockExcl,
 ...                                         SELockShare)
@@ -79,7 +79,7 @@ lock obtained shared
 
 
 :Example: use SELockObtain context managers to coordinate
-          access to a shared resource
+          access to a resource
 
 >>> from scottbrian_locking.se_lock import (SELock, SELockObtain,
 ...                                         SELockObtainMode)
@@ -97,6 +97,7 @@ lock obtained exclusive
 lock obtained shared
 
 """
+
 ########################################################################
 # Standard Library
 ########################################################################
@@ -214,8 +215,8 @@ class LockInfo(NamedTuple):
 class SELock:
     """Provides a share/exclusive lock.
 
-    The SELock class is used to coordinate read/write access to shared
-    resources in a multi-threaded application.
+    The SELock class is used to coordinate read/write access to
+    resources in a multithreaded application.
 
     """
 
@@ -372,7 +373,13 @@ class SELock:
 
         Raises:
             SELockOwnerNotAlive: The owner of the SELock is not alive
-                and will thus never release the lock.
+                and will thus never release the lock. Unfortunately,
+                this error is not detectable until a request is made,
+                and raising it here makes the current requestor is an
+                innocent bystander. The solution is to provide
+                recovery processing for lock owners to ensure that
+                resources are left in a known state and held locks are
+                released when the owner thread suffers an error.
             SELockObtainTimeout: A lock obtain request has timed out
                 waiting for the current owner thread to release the
                 lock.
@@ -438,7 +445,13 @@ class SELock:
 
         Raises:
             SELockOwnerNotAlive: The owner of the SELock is not alive
-                and will thus never release the lock.
+                and will thus never release the lock. Unfortunately,
+                this error is not detectable until a request is made,
+                and raising it here makes the current requestor is an
+                innocent bystander. The solution is to provide
+                recovery processing for lock owners to ensure that
+                resources are left in a known state and held locks are
+                released when the owner thread suffers an error.
             SELockObtainTimeout: A lock obtain request has timed out
                 waiting for the current owner thread to release the
                 lock.
@@ -526,7 +539,13 @@ class SELock:
 
         Raises:
             SELockOwnerNotAlive: The owner of the SELock is not alive
-                and will thus never release the lock.
+                and will thus never release the lock. Unfortunately,
+                this error is not detectable until a request is made,
+                and raising it here makes the current requestor is an
+                innocent bystander. The solution is to provide
+                recovery processing for lock owners to ensure that
+                resources are left in a known state and held locks are
+                released when the owner thread suffers an error.
             SELockObtainTimeout: A lock obtain request has timed out
                 waiting for the current owner thread to release the
                 lock.
@@ -775,7 +794,13 @@ class SELock:
 
         Raises:
             SELockOwnerNotAlive: The owner of the SELock is not alive
-                and will thus never release the lock.
+                and will thus never release the lock. Unfortunately,
+                this error is not detectable until a request is made,
+                and raising it here makes the current requestor is an
+                innocent bystander. The solution is to provide
+                recovery processing for lock owners to ensure that
+                resources are left in a known state and held locks are
+                released when the owner thread suffers an error.
             SELockObtainTimeout: A lock obtain request has timed out
                 waiting for the current owner thread to release the
                 lock.
@@ -950,9 +975,11 @@ class SELock:
             return LockInfo(
                 queue=[
                     LockItem(
-                        mode=SELockObtainMode.Share
-                        if item.mode == SELock._Mode.SHARE
-                        else SELockObtainMode.Exclusive,
+                        mode=(
+                            SELockObtainMode.Share
+                            if item.mode == SELock._Mode.SHARE
+                            else SELockObtainMode.Exclusive
+                        ),
                         event_flag=item.event.is_set(),
                         thread=item.thread,
                     )
@@ -1144,7 +1171,13 @@ class SELockShare:
 
         Raises:
             SELockOwnerNotAlive: The owner of the SELock is not alive
-                and will thus never release the lock.
+                and will thus never release the lock. Unfortunately,
+                this error is not detectable until a request is made,
+                and raising it here makes the current requestor is an
+                innocent bystander. The solution is to provide
+                recovery processing for lock owners to ensure that
+                resources are left in a known state and held locks are
+                released when the owner thread suffers an error.
             SELockObtainTimeout: A lock obtain request has timed out
                 waiting for the current owner thread to release the
                 lock.
@@ -1239,7 +1272,13 @@ class SELockExcl:
 
         Raises:
             SELockOwnerNotAlive: The owner of the SELock is not alive
-                and will thus never release the lock.
+                and will thus never release the lock. Unfortunately,
+                this error is not detectable until a request is made,
+                and raising it here makes the current requestor is an
+                innocent bystander. The solution is to provide
+                recovery processing for lock owners to ensure that
+                resources are left in a known state and held locks are
+                released when the owner thread suffers an error.
             SELockObtainTimeout: A lock obtain request has timed out
                 waiting for the current owner thread to release the
                 lock.
@@ -1341,7 +1380,13 @@ class SELockObtain:
 
         Raises:
             SELockOwnerNotAlive: The owner of the SELock is not alive
-                and will thus never release the lock.
+                and will thus never release the lock. Unfortunately,
+                this error is not detectable until a request is made,
+                and raising it here makes the current requestor is an
+                innocent bystander. The solution is to provide
+                recovery processing for lock owners to ensure that
+                resources are left in a known state and held locks are
+                released when the owner thread suffers an error.
             SELockObtainTimeout: A lock obtain request has timed out
                 waiting for the current owner thread to release the
                 lock.

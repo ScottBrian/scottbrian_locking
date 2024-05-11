@@ -1,2 +1,2 @@
 .. automodule:: se_lock
-   :members:
+   :members: SELock, SELockShare, SELockExcl, SELockObtain

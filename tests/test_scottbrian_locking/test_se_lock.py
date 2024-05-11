@@ -99,23 +99,6 @@ lock_request_list = (
 )
 
 
-####################################################################
-# log_test_msg
-####################################################################
-def log_test_msg(log_msg: str, log_ver: LogVer) -> None:
-    """Issue log msgs for test rtn.
-
-    Args:
-        log_msg: the message to log
-        log_ver: log verifier
-
-    """
-    log_ver.add_pattern(
-        pattern=log_msg, log_name="test_scottbrian_locking.test_se_lock"
-    )
-    logger.debug(log_msg, stacklevel=2)
-
-
 ########################################################################
 # TestSELockBasic class to test SELock methods
 ########################################################################
@@ -1596,7 +1579,7 @@ class TestSELockBasic:
         ################################################################
         log_ver = LogVer(log_name="scottbrian_locking.se_lock")
 
-        log_test_msg("mainline entry", log_ver=log_ver)
+        log_ver.test_msg("mainline entry")
 
         if ml_context_arg == ContextArg.NoContext:
             ml_excl_call_seq = (
@@ -1635,7 +1618,7 @@ class TestSELockBasic:
         # 1: obtain
         # 2: release
         ################################################################
-        log_test_msg("about to do step 1", log_ver=log_ver)
+        log_ver.test_msg("about to do step 1")
 
         ml_esc_thread_name = re.escape(f"{ml_thread.name}")
         ml_excl_obtain_pattern = (
@@ -1646,7 +1629,7 @@ class TestSELockBasic:
 
         log_ver.add_pattern(pattern=ml_excl_obtain_pattern)
 
-        log_test_msg("about to do step 2", log_ver=log_ver)
+        log_ver.test_msg("about to do step 2")
 
         ml_excl_release_pattern = (
             f"SELock release request removed exclusive control for thread "
@@ -1685,7 +1668,7 @@ class TestSELockBasic:
         # 3: recursive obtain
         # 4: release
         ################################################################
-        log_test_msg("about to do step 3", log_ver=log_ver)
+        log_ver.test_msg("about to do step 3")
 
         ml_recursive_obtain_pattern = (
             "SELock exclusive recursive obtain request granted "
@@ -1695,7 +1678,7 @@ class TestSELockBasic:
         )
         log_ver.add_pattern(pattern=ml_recursive_obtain_pattern)
 
-        log_test_msg("about to do step 4", log_ver=log_ver)
+        log_ver.test_msg("about to do step 4")
 
         log_ver.add_pattern(pattern=ml_excl_release_pattern)
 
@@ -1735,11 +1718,11 @@ class TestSELockBasic:
         # 7: release
         # 8: release
         ################################################################
-        log_test_msg("about to do step 5", log_ver=log_ver)
+        log_ver.test_msg("about to do step 5")
 
         log_ver.add_pattern(pattern=ml_excl_obtain_pattern)
 
-        log_test_msg("about to do step 6", log_ver=log_ver)
+        log_ver.test_msg("about to do step 6")
 
         ml_recursive_excl_continue_pattern_to_2 = (
             "SELock exclusive recursive obtain request continues "
@@ -1749,7 +1732,7 @@ class TestSELockBasic:
         )
         log_ver.add_pattern(pattern=ml_recursive_excl_continue_pattern_to_2)
 
-        log_test_msg("about to do step 7", log_ver=log_ver)
+        log_ver.test_msg("about to do step 7")
 
         ml_recursive_release_pattern_to_1 = (
             "SELock release request continues "
@@ -1759,7 +1742,7 @@ class TestSELockBasic:
         )
         log_ver.add_pattern(pattern=ml_recursive_release_pattern_to_1)
 
-        log_test_msg("about to do step 8", log_ver=log_ver)
+        log_ver.test_msg("about to do step 8")
 
         log_ver.add_pattern(pattern=ml_excl_release_pattern)
 
@@ -1878,19 +1861,19 @@ class TestSELockBasic:
         # 12: release
         ################################################################
 
-        log_test_msg("about to do step 9", log_ver=log_ver)
+        log_ver.test_msg("about to do step 9")
 
         log_ver.add_pattern(pattern=ml_recursive_obtain_pattern)
 
-        log_test_msg("about to do step 10", log_ver=log_ver)
+        log_ver.test_msg("about to do step 10")
 
         log_ver.add_pattern(pattern=ml_recursive_excl_continue_pattern_to_2)
 
-        log_test_msg("about to do step 11", log_ver=log_ver)
+        log_ver.test_msg("about to do step 11")
 
         log_ver.add_pattern(pattern=ml_recursive_release_pattern_to_1)
 
-        log_test_msg("about to do step 12", log_ver=log_ver)
+        log_ver.test_msg("about to do step 12")
 
         log_ver.add_pattern(pattern=ml_excl_release_pattern)
 
@@ -2009,15 +1992,15 @@ class TestSELockBasic:
         # 17: release
         # 18: release
         ################################################################
-        log_test_msg("about to do step 13", log_ver=log_ver)
+        log_ver.test_msg("about to do step 13")
 
         log_ver.add_pattern(pattern=ml_excl_obtain_pattern)
 
-        log_test_msg("about to do step 14", log_ver=log_ver)
+        log_ver.test_msg("about to do step 14")
 
         log_ver.add_pattern(pattern=ml_recursive_excl_continue_pattern_to_2)
 
-        log_test_msg("about to do step 15", log_ver=log_ver)
+        log_ver.test_msg("about to do step 15")
 
         ml_recursive_excl_continue_pattern_to_3 = (
             "SELock exclusive recursive obtain request continues "
@@ -2027,7 +2010,7 @@ class TestSELockBasic:
         )
         log_ver.add_pattern(pattern=ml_recursive_excl_continue_pattern_to_3)
 
-        log_test_msg("about to do step 16", log_ver=log_ver)
+        log_ver.test_msg("about to do step 16")
 
         ml_recursive_release_pattern_to_2 = (
             "SELock release request continues "
@@ -2037,11 +2020,11 @@ class TestSELockBasic:
         )
         log_ver.add_pattern(pattern=ml_recursive_release_pattern_to_2)
 
-        log_test_msg("about to do step 17", log_ver=log_ver)
+        log_ver.test_msg("about to do step 17")
 
         log_ver.add_pattern(pattern=ml_recursive_release_pattern_to_1)
 
-        log_test_msg("about to do step 18", log_ver=log_ver)
+        log_ver.test_msg("about to do step 18")
 
         log_ver.add_pattern(pattern=ml_excl_release_pattern)
 
@@ -2214,7 +2197,7 @@ class TestSELockBasic:
         assert len(lock_info.queue) == 0
         assert lock_info.owner_count == 0
 
-        log_test_msg("mainline exit", log_ver=log_ver)
+        log_ver.test_msg("mainline exit")
 
         ################################################################
         # check log results
@@ -2538,7 +2521,7 @@ class TestSELock:
                 f1_context: specifies how f1 obtains the lock
 
             """
-            log_test_msg(log_msg="f1 entered", log_ver=log_ver)
+            log_ver.test_msg(log_msg="f1 entered")
 
             ############################################################
             # Excl mode
@@ -2595,13 +2578,13 @@ class TestSELock:
 
             if f1_context == ContextArg.NoContext:
                 if use_timeout_tf:
-                    log_test_msg(log_msg=obtaining_log_msg, log_ver=log_ver)
+                    log_ver.test_msg(log_msg=obtaining_log_msg)
                     a_lock.obtain_excl(timeout=timeout_arg)
-                    log_test_msg(log_msg=obtained_log_msg, log_ver=log_ver)
+                    log_ver.test_msg(log_msg=obtained_log_msg)
                 else:
-                    log_test_msg(log_msg=obtaining_log_msg, log_ver=log_ver)
+                    log_ver.test_msg(log_msg=obtaining_log_msg)
                     a_lock.obtain_excl()
-                    log_test_msg(log_msg=obtained_log_msg, log_ver=log_ver)
+                    log_ver.test_msg(log_msg=obtained_log_msg)
 
                 msgs.queue_msg("alpha")
                 msgs.get_msg("beta", timeout=msgs_get_to)
@@ -2610,32 +2593,32 @@ class TestSELock:
 
             elif f1_context == ContextArg.ContextExclShare:
                 if use_timeout_tf:
-                    log_test_msg(log_msg=obtaining_log_msg, log_ver=log_ver)
+                    log_ver.test_msg(log_msg=obtaining_log_msg)
                     with SELockExcl(a_lock, timeout=timeout_arg):
-                        log_test_msg(log_msg=obtained_log_msg, log_ver=log_ver)
+                        log_ver.test_msg(log_msg=obtained_log_msg)
                         msgs.queue_msg("alpha")
                         msgs.get_msg("beta", timeout=msgs_get_to)
                 else:
-                    log_test_msg(log_msg=obtaining_log_msg, log_ver=log_ver)
+                    log_ver.test_msg(log_msg=obtaining_log_msg)
                     with SELockExcl(a_lock):
-                        log_test_msg(log_msg=obtained_log_msg, log_ver=log_ver)
+                        log_ver.test_msg(log_msg=obtained_log_msg)
                         msgs.queue_msg("alpha")
                         msgs.get_msg("beta", timeout=msgs_get_to)
             else:
                 if use_timeout_tf:
-                    log_test_msg(log_msg=obtaining_log_msg, log_ver=log_ver)
+                    log_ver.test_msg(log_msg=obtaining_log_msg)
                     with SELockObtain(
                         a_lock,
                         obtain_mode=SELockObtainMode.Exclusive,
                         timeout=timeout_arg,
                     ):
-                        log_test_msg(log_msg=obtained_log_msg, log_ver=log_ver)
+                        log_ver.test_msg(log_msg=obtained_log_msg)
                         msgs.queue_msg("alpha")
                         msgs.get_msg("beta", timeout=msgs_get_to)
                 else:
-                    log_test_msg(log_msg=obtaining_log_msg, log_ver=log_ver)
+                    log_ver.test_msg(log_msg=obtaining_log_msg)
                     with SELockObtain(a_lock, obtain_mode=SELockObtainMode.Exclusive):
-                        log_test_msg(log_msg=obtained_log_msg, log_ver=log_ver)
+                        log_ver.test_msg(log_msg=obtained_log_msg)
                         msgs.queue_msg("alpha")
                         msgs.get_msg("beta", timeout=msgs_get_to)
 
@@ -2692,13 +2675,13 @@ class TestSELock:
 
             if f1_context == ContextArg.NoContext:
                 if use_timeout_tf:
-                    log_test_msg(log_msg=obtaining_log_msg, log_ver=log_ver)
+                    log_ver.test_msg(log_msg=obtaining_log_msg)
                     a_lock.obtain_share(timeout=timeout_arg)
-                    log_test_msg(log_msg=obtained_log_msg, log_ver=log_ver)
+                    log_ver.test_msg(log_msg=obtained_log_msg)
                 else:
-                    log_test_msg(log_msg=obtaining_log_msg, log_ver=log_ver)
+                    log_ver.test_msg(log_msg=obtaining_log_msg)
                     a_lock.obtain_share()
-                    log_test_msg(log_msg=obtained_log_msg, log_ver=log_ver)
+                    log_ver.test_msg(log_msg=obtained_log_msg)
 
                 msgs.queue_msg("alpha")
                 msgs.get_msg("beta", timeout=msgs_get_to)
@@ -2707,41 +2690,41 @@ class TestSELock:
 
             elif f1_context == ContextArg.ContextExclShare:
                 if use_timeout_tf:
-                    log_test_msg(log_msg=obtaining_log_msg, log_ver=log_ver)
+                    log_ver.test_msg(log_msg=obtaining_log_msg)
                     with SELockShare(a_lock, timeout=timeout_arg):
-                        log_test_msg(log_msg=obtained_log_msg, log_ver=log_ver)
+                        log_ver.test_msg(log_msg=obtained_log_msg)
                         msgs.queue_msg("alpha")
                         msgs.get_msg("beta", timeout=msgs_get_to)
                 else:
-                    log_test_msg(log_msg=obtaining_log_msg, log_ver=log_ver)
+                    log_ver.test_msg(log_msg=obtaining_log_msg)
                     with SELockShare(a_lock):
-                        log_test_msg(log_msg=obtained_log_msg, log_ver=log_ver)
+                        log_ver.test_msg(log_msg=obtained_log_msg)
                         msgs.queue_msg("alpha")
                         msgs.get_msg("beta", timeout=msgs_get_to)
             else:
                 if use_timeout_tf:
-                    log_test_msg(log_msg=obtaining_log_msg, log_ver=log_ver)
+                    log_ver.test_msg(log_msg=obtaining_log_msg)
                     with SELockObtain(
                         a_lock, obtain_mode=SELockObtainMode.Share, timeout=timeout_arg
                     ):
-                        log_test_msg(log_msg=obtained_log_msg, log_ver=log_ver)
+                        log_ver.test_msg(log_msg=obtained_log_msg)
                         msgs.queue_msg("alpha")
                         msgs.get_msg("beta", timeout=msgs_get_to)
                 else:
-                    log_test_msg(log_msg=obtaining_log_msg, log_ver=log_ver)
+                    log_ver.test_msg(log_msg=obtaining_log_msg)
                     with SELockObtain(a_lock, obtain_mode=SELockObtainMode.Share):
-                        log_test_msg(log_msg=obtained_log_msg, log_ver=log_ver)
+                        log_ver.test_msg(log_msg=obtained_log_msg)
                         msgs.queue_msg("alpha")
                         msgs.get_msg("beta", timeout=msgs_get_to)
 
-            log_test_msg(log_msg="f1 exiting", log_ver=log_ver)
+            log_ver.test_msg(log_msg="f1 exiting")
 
         ################################################################
         # mainline
         ################################################################
         log_ver = LogVer(log_name="scottbrian_locking.se_lock")
 
-        log_test_msg(log_msg="mainline entered", log_ver=log_ver)
+        log_ver.test_msg(log_msg="mainline entered")
 
         msgs = Msgs()
         stop_watch = StopWatch()
@@ -2760,13 +2743,13 @@ class TestSELock:
 
         f1_thread_name = re.escape(f"{f1_thread.name}")
 
-        log_test_msg(log_msg="mainline about to wait 1", log_ver=log_ver)
+        log_ver.test_msg(log_msg="mainline about to wait 1")
         msgs.get_msg("alpha")
 
         ################################################################
         # excl 1
         ################################################################
-        log_test_msg(log_msg="mainline about to request excl 1", log_ver=log_ver)
+        log_ver.test_msg(log_msg="mainline about to request excl 1")
 
         ml_esc_thread_name = re.escape(f"{ml_thread.name}")
 
@@ -2820,7 +2803,7 @@ class TestSELock:
         ################################################################
         # share 1
         ################################################################
-        log_test_msg(log_msg="mainline about to request share 1", log_ver=log_ver)
+        log_ver.test_msg(log_msg="mainline about to request share 1")
 
         if ml_context_arg == ContextArg.NoContext:
             ml_share_call_seq = (
@@ -2871,7 +2854,7 @@ class TestSELock:
         ################################################################
         # excl 2
         ################################################################
-        log_test_msg(log_msg="mainline about to request excl 2", log_ver=log_ver)
+        log_ver.test_msg(log_msg="mainline about to request excl 2")
 
         log_ver.add_pattern(pattern=ml_excl_wait_pattern)
         log_ver.add_pattern(pattern=ml_excl_timeout_error_pattern, level=logging.ERROR)
@@ -2893,7 +2876,7 @@ class TestSELock:
         ################################################################
         # share 2
         ################################################################
-        log_test_msg(log_msg="mainline about to request share 2", log_ver=log_ver)
+        log_ver.test_msg(log_msg="mainline about to request share 2")
 
         log_ver.add_pattern(pattern=ml_share_wait_pattern)
         log_ver.add_pattern(pattern=ml_share_timeout_error_pattern, level=logging.ERROR)
@@ -2914,13 +2897,13 @@ class TestSELock:
 
         msgs.queue_msg("beta")
 
-        log_test_msg(log_msg="mainline about to wait 2", log_ver=log_ver)
+        log_ver.test_msg(log_msg="mainline about to wait 2")
         msgs.get_msg("alpha")
 
         ################################################################
         # excl 3
         ################################################################
-        log_test_msg(log_msg="mainline about to request excl 3", log_ver=log_ver)
+        log_ver.test_msg(log_msg="mainline about to request excl 3")
 
         log_ver.add_pattern(pattern=ml_excl_wait_pattern)
         log_ver.add_pattern(pattern=ml_excl_timeout_error_pattern, level=logging.ERROR)
@@ -2942,7 +2925,7 @@ class TestSELock:
         ################################################################
         # share 3
         ################################################################
-        log_test_msg(log_msg="mainline about to request share 3", log_ver=log_ver)
+        log_ver.test_msg(log_msg="mainline about to request share 3")
 
         ml_share_obtain_pattern = (
             "SELock share obtain request granted immediate shared "
@@ -2990,7 +2973,7 @@ class TestSELock:
         ################################################################
         # excl 4
         ################################################################
-        log_test_msg(log_msg="mainline about to request excl 4", log_ver=log_ver)
+        log_ver.test_msg(log_msg="mainline about to request excl 4")
 
         log_ver.add_pattern(pattern=ml_excl_wait_pattern)
         log_ver.add_pattern(pattern=ml_excl_timeout_error_pattern, level=logging.ERROR)
@@ -3012,7 +2995,7 @@ class TestSELock:
         ################################################################
         # share 4
         ################################################################
-        log_test_msg(log_msg="mainline about to request share 4", log_ver=log_ver)
+        log_ver.test_msg(log_msg="mainline about to request share 4")
 
         log_ver.add_pattern(pattern=ml_share_obtain_pattern)
         log_ver.add_pattern(pattern=ml_share_release_pattern)
@@ -3031,7 +3014,7 @@ class TestSELock:
 
         msgs.queue_msg("beta")
         f1_thread.join()
-        log_test_msg(log_msg="mainline exiting", log_ver=log_ver)
+        log_ver.test_msg(log_msg="mainline exiting")
 
         ################################################################
         # check log results

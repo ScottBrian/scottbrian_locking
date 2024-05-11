@@ -5,10 +5,10 @@ scottbrian-locking
 Intro
 =====
 
-The SELock is a shared/exclusive lock that you can use to safely read
-and write shared resources in a multi-threaded application.
+The SELock is a shared/exclusive lock that you can use to coordinate
+read and write access to a resource in a multithreaded application.
 
-:Example: use SELock to coordinate access to a shared resource
+:Example: use SELock to coordinate access to a resource
 
 >>> from scottbrian_locking import se_lock as sel
 >>> a_lock = sel.SELock()
