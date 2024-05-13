@@ -37,7 +37,7 @@ lock obtained shared
 Installation
 ============
 
-Linux:
+Windows:
 
 ``pip install scottbrian-locking``
 
@@ -64,6 +64,13 @@ Release History
     * Make consistent log and error messages
     * Support python 3.12
     * Drop support for python < 3.12
+
+* 2.0.1
+    * Fix documentation
+        * change docs/source/index.rst
+        * change docs/requirements.txt
+        * change readthedoc.yml
+
 
 Meta
 ====

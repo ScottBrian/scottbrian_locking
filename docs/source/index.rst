@@ -7,7 +7,8 @@
 .. include:: ../../README.rst
 
 .. toctree::
-   :maxdepth: 4
+   :maxdepth: 2
+   :titlesonly:
    :caption: API Reference:
 
    se_lock <se_lock_link>
