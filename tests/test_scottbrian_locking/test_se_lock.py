@@ -3629,97 +3629,52 @@ class TestSELockVerify:
 
         """
 
+        @dataclass
+        class ThreadEventPair:
+            thread: threading.Thread
+            event: threading.Event
+
+        @dataclass
+        class CountsAndQ:
+            exp_q: list[LockItem]
+            exp_real_q: list[LockItem]
+            thread_event_pairs: list[ThreadEventPair]
+            exp_owner_count = 0
+            exp_real_owner_count = 0
+            exp_excl_wait_count = 0
+            exp_real_excl_wait_count = 0
+
+        ################################################################
+        # app_thread
+        ################################################################
         def app_thread(
-            num_requests: tuple[SELock.ReqType],
+            req_type: SELockObtainMode,
+            app_event: threading.Event,
         ) -> None:
             """Function to get the lock and wait.
 
             Args:
-                request_list: list of lock requests for f_rtn
+                req_type: lock request to do
+                app_event: event to wait on before releasing lock
 
             """
-            thread_esc_name = re.escape(f"{threading.current_thread().name}")
-            f1_call_seq = (
-                "threading.py::Thread.run:[0-9]+ -> test_se_lock.py::app_thread:[0-9]+"
-            )
-            ml_event0.set()
-            ml_event1.wait()
+            if timeout_type_arg != TimeoutType.TimeoutNone:
+                time.sleep(2)
 
-            lock_owner_count = 0
-            for idx, request in enumerate(request_list):
-                logger.debug(f"f1 doing request {idx}: {request}")
-                if request == SELock.ReqType.Exclusive:
-                    if lock_owner_count == 0:
-                        a_lock.obtain_excl()
-                        lock_owner_count = -1
-                    else:
-                        f1_error_msg = (
-                            f"{request} for thread {thread_esc_name} "
-                            "raising SELockAlreadyOwnedError because the requestor "
-                            "already owns the lock. "
-                            f"Request call sequence: {f1_call_seq}"
-                        )
-                        with pytest.raises(SELockAlreadyOwnedError, match=f1_error_msg):
-                            a_lock.obtain_excl()
+            with SELockObtain(se_lock=a_lock, obtain_mode=req_type):
+                app_event.wait()
 
-                elif request == SELock.ReqType.ExclusiveRecursive:
-                    if lock_owner_count <= 0:
-                        a_lock.obtain_excl_recursive()
-                        lock_owner_count -= 1
-                    else:
-                        f1_error_msg = (
-                            f"{request} for thread {thread_esc_name} "
-                            "raising SELockAlreadyOwnedError because the requestor "
-                            "already owns the lock. "
-                            f"Request call sequence: {f1_call_seq}"
-                        )
-                        with pytest.raises(SELockAlreadyOwnedError, match=f1_error_msg):
-                            a_lock.obtain_excl_recursive()
-
-                elif request == SELock.ReqType.Share:
-                    if lock_owner_count == 0:
-                        a_lock.obtain_share()
-                        lock_owner_count = 1
-                    else:
-                        f1_error_msg = (
-                            f"{request} for thread {thread_esc_name} "
-                            "raising SELockAlreadyOwnedError because the requestor "
-                            "already owns the lock. "
-                            f"Request call sequence: {f1_call_seq}"
-                        )
-                        with pytest.raises(SELockAlreadyOwnedError, match=f1_error_msg):
-                            a_lock.obtain_share()
-
-                elif request == SELock.ReqType.Release:
-                    if lock_owner_count == 1:
-                        a_lock.release()
-                        lock_owner_count = 0
-                    elif lock_owner_count < 0:
-                        a_lock.release()
-                        lock_owner_count += 1
-                    else:
-                        f1_error_msg = (
-                            f"{request} for thread {thread_esc_name} raising "
-                            "AttemptedReleaseOfUnownedLock because an entry on the "
-                            "owner-waiter queue was not found for that thread. "
-                            f"Request call sequence: {f1_call_seq}"
-                        )
-                        with pytest.raises(
-                            AttemptedReleaseOfUnownedLock, match=f1_error_msg
-                        ):
-                            a_lock.release()
-
-                else:
-                    raise InvalidRequestType(f"request {request} not valid")
-
-            while lock_owner_count:
-                a_lock.release()
-                if lock_owner_count == 1:
-                    lock_owner_count = 0
-                else:
-                    lock_owner_count += 1
-
-        def verify_rtn(exp_q: list[LockItem], exp_owner_count: int, exp_excl_wait_count: int,):
+        ################################################################
+        # verify_rtn
+        ################################################################
+        def verify_rtn(
+            exp_q: list[LockItem],
+            exp_real_q: list[LockItem],
+            exp_owner_count: int,
+            exp_real_owner_count: int,
+            exp_excl_wait_count: int,
+            exp_real_excl_wait_count: int,
+        ):
             if timeout_type_arg == TimeoutType.TimeoutNone:
                 a_lock.verify_lock(
                     exp_q=exp_q,
@@ -3737,33 +3692,71 @@ class TestSELockVerify:
                 )
             else:
                 ml_error_msg = (
-                        re.escape(
-                            f"lock_verify raising LockVerifyError. {exp_q=}, "
-                            f"lock_info.queue={exp_real_q}, {exp_owner_count=}, "
-                            f"lock_info.owner_count={exp_real_owner_count}, "
-                            f"{exp_excl_wait_count=}, "
-                            f"lock_info.excl_wait_count={exp_real_excl_wait_count}, "
-                            f"timeout=1. "
-                        )
-                        + ml_call_seq
+                    re.escape(
+                        f"lock_verify raising LockVerifyError. {exp_q=}, "
+                        f"lock_info.queue={exp_real_q}, {exp_owner_count=}, "
+                        f"lock_info.owner_count={exp_real_owner_count}, "
+                        f"{exp_excl_wait_count=}, "
+                        f"lock_info.excl_wait_count={exp_real_excl_wait_count}, "
+                        f"timeout=1. "
+                    )
+                    + ml_call_seq
                 )
                 log_ver.add_pattern(pattern=ml_error_msg, level=logging.ERROR)
 
-                ################################################################
-                # lock empty q, timeout=1
-                ################################################################
                 with pytest.raises(LockVerifyError, match=ml_error_msg):
                     a_lock.verify_lock(
-                        exp_q=ml_exp_q,
-                        exp_owner_count=1,
-                        exp_excl_wait_count=0,
+                        exp_q=exp_q,
+                        exp_owner_count=exp_owner_count,
+                        exp_excl_wait_count=exp_excl_wait_count,
                         verify_structures=True,
                         timeout=1,
                     )
 
+        def get_lock(
+            gl_counts_and_q: CountsAndQ,
+            req_type: SELockObtainMode,
+        ):
+
+            a_event = threading.Event()
+            a_thread = threading.Thread(target=app_thread, args=(req_type, a_event))
+            gl_counts_and_q.thread_event_pairs.append(
+                ThreadEventPair(thread=a_thread, event=a_event)
+            )
+
+            gl_counts_and_q.exp_real_q = gl_counts_and_q.exp_q.copy()
+            gl_counts_and_q.exp_real_owner_count = gl_counts_and_q.exp_owner_count
+            gl_counts_and_q.exp_real_excl_wait_count = (
+                gl_counts_and_q.exp_excl_wait_count
+            )
+            gl_counts_and_q.exp_q.append(
+                LockItem(
+                    mode=SELockObtainMode.Exclusive,
+                    event_flag=False,
+                    thread=a_thread,
+                )
+            )
+
+            a_thread.start()
+            if gl_counts_and_q.exp_owner_count == -1:
+                gl_counts_and_q.exp_excl_wait_count += 1
+            gl_counts_and_q.exp_owner_count = -1
+            verify_rtn(
+                exp_q=gl_counts_and_q.exp_q,
+                exp_real_q=gl_counts_and_q.exp_real_q,
+                exp_owner_count=gl_counts_and_q.exp_owner_count,
+                exp_real_owner_count=gl_counts_and_q.exp_real_owner_count,
+                exp_excl_wait_count=gl_counts_and_q.exp_excl_wait_count,
+                exp_real_excl_wait_count=gl_counts_and_q.exp_real_excl_wait_count,
+            )
+
+            return gl_counts_and_q
+
         ################################################################
         # mainline
         ################################################################
+        log_ver = LogVer(log_name="scottbrian_locking.se_lock")
+
         ml_call_seq = (
             "Request call sequence: python.py::pytest_pyfunc_call:[0-9]+ -> "
             "test_se_lock.py::TestSELockVerify.test_lock_multi_thread_verify:[0-9]+"
@@ -3777,61 +3770,23 @@ class TestSELockVerify:
             verify_structures=True,
         )
 
-        ml_event0 = threading.Event()
-        ml_event1 = threading.Event()
-
-        threads: list[threading.Thread] = []
-        exp_q: list[LockItem] = []
-        exp_owner_count = 0
-        exp_excl_wait_count = 0
-
+        ml_counts_q = CountsAndQ(exp_q=[], exp_real_q=[], thread_event_pairs=[])
         for idx in num_excl_grp1_arg:
-            a_lock.verify_lock(
-                exp_q=exp_q,
-                exp_owner_count=exp_owner_count,
-                exp_excl_wait_count=exp_excl_wait_count,
-                verify_structures=False,
-                timeout=0,
-            )
-            a_thread = threading.Thread(
-                target=app_thread, args=(SELockObtainMode.Exclusive,)
-            )
-            threads.append(a_thread)
-            exp_q.append(
-                LockItem(
-                    mode=SELockObtainMode.Exclusive,
-                    event_flag=False,
-                    thread=a_thread,
-                )
+            ml_counts_q = get_lock(
+                gl_counts_and_q=ml_counts_and_q,
+                req_type=SELockObtainMode.Exclusive,
             )
 
-        f1_thread = threading.Thread(
-            target=app_thread, args=(SELockObtainMode.Exclusive,)
-        )
-        f1_thread.start()
-        ml_event0.wait()
-        ml_event0.clear()
+        for thread_event_pair in ml_counts_q.thread_event_pairs:
+            thread_event_pair.event.set()
+            thread_event_pair.thread.join()
 
-        f2_thread = threading.Thread(target=app_thread, args=(num_share_grp2_arg,))
-        f2_thread.start()
-        ml_event0.wait()
-        ml_event0.clear()
-
-        f3_thread = threading.Thread(target=app_thread, args=(num_excl_grp3_arg,))
-        f3_thread.start()
-        ml_event0.wait()
-        ml_event0.clear()
-
-        f4_thread = threading.Thread(target=app_thread, args=(num_share_grp4_arg,))
-        f4_thread.start()
-        ml_event0.wait()
-        ml_event0.clear()
-
-        ml_event1.set()
-
-        f1_thread.join()
-        f2_thread.join()
-        f3_thread.join()
+        ################################################################
+        # check log results
+        ################################################################
+        match_results = log_ver.get_match_results(caplog=caplog)
+        log_ver.print_match_results(match_results, print_matched=True)
+        log_ver.verify_match_results(match_results)
 
 
 ########################################################################
