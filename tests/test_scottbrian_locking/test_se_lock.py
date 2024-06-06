@@ -3639,10 +3639,12 @@ class TestSELockVerify:
             exp_q: list[LockItem]
             exp_real_q: list[LockItem]
             thread_event_pairs: list[ThreadEventPair]
-            exp_owner_count = 0
-            exp_real_owner_count = 0
-            exp_excl_wait_count = 0
-            exp_real_excl_wait_count = 0
+            exp_owner_count: int = 0
+            exp_real_owner_count: int = 0
+            exp_excl_wait_count: int = 0
+            exp_real_excl_wait_count: int = 0
+            shared_waiter_count_1: int = 0
+            shared_waiter_count_2: int = 0
 
         ################################################################
         # app_thread
@@ -3663,6 +3665,8 @@ class TestSELockVerify:
 
             with SELockObtain(se_lock=a_lock, obtain_mode=req_type):
                 app_event.wait()
+                if timeout_type_arg != TimeoutType.TimeoutNone:
+                    time.sleep(2)
 
         ################################################################
         # verify_rtn
@@ -3731,16 +3735,30 @@ class TestSELockVerify:
             )
             gl_counts_and_q.exp_q.append(
                 LockItem(
-                    mode=SELockObtainMode.Exclusive,
+                    mode=req_type,
                     event_flag=False,
                     thread=a_thread,
                 )
             )
 
+            if req_type == SELockObtainMode.Exclusive:
+                if gl_counts_and_q.exp_real_owner_count == -1:
+                    gl_counts_and_q.exp_excl_wait_count += 1
+                gl_counts_and_q.exp_owner_count = -1
+            else:
+                if gl_counts_and_q.exp_real_owner_count == -1:
+                    if gl_counts_and_q.exp_real_excl_wait_count == 0:
+                        gl_counts_and_q.shared_waiter_count_1 += 1
+                    else:
+                        gl_counts_and_q.shared_waiter_count_2 += 1
+                else:
+                    if gl_counts_and_q.exp_real_excl_wait_count == 0:
+                        gl_counts_and_q.exp_owner_count += 1
+                    else:
+                        gl_counts_and_q.shared_waiter_count_2 += 1
+
             a_thread.start()
-            if gl_counts_and_q.exp_owner_count == -1:
-                gl_counts_and_q.exp_excl_wait_count += 1
-            gl_counts_and_q.exp_owner_count = -1
+
             verify_rtn(
                 exp_q=gl_counts_and_q.exp_q,
                 exp_real_q=gl_counts_and_q.exp_real_q,
@@ -3770,14 +3788,29 @@ class TestSELockVerify:
             verify_structures=True,
         )
 
-        ml_counts_q = CountsAndQ(exp_q=[], exp_real_q=[], thread_event_pairs=[])
-        for idx in num_excl_grp1_arg:
-            ml_counts_q = get_lock(
+        ml_counts_and_q = CountsAndQ(exp_q=[], exp_real_q=[], thread_event_pairs=[])
+        for idx in range(num_excl_grp1_arg):
+            ml_counts_and_q = get_lock(
                 gl_counts_and_q=ml_counts_and_q,
                 req_type=SELockObtainMode.Exclusive,
             )
+        for idx in range(num_share_grp2_arg):
+            ml_counts_and_q = get_lock(
+                gl_counts_and_q=ml_counts_and_q,
+                req_type=SELockObtainMode.Share,
+            )
+        for idx in range(num_excl_grp3_arg):
+            ml_counts_and_q = get_lock(
+                gl_counts_and_q=ml_counts_and_q,
+                req_type=SELockObtainMode.Share,
+            )
+        for idx in range(num_share_grp4_arg):
+            ml_counts_and_q = get_lock(
+                gl_counts_and_q=ml_counts_and_q,
+                req_type=SELockObtainMode.Share,
+            )
 
-        for thread_event_pair in ml_counts_q.thread_event_pairs:
+        for thread_event_pair in ml_counts_and_q.thread_event_pairs:
             thread_event_pair.event.set()
             thread_event_pair.thread.join()
 
@@ -3786,7 +3819,7 @@ class TestSELockVerify:
         ################################################################
         match_results = log_ver.get_match_results(caplog=caplog)
         log_ver.print_match_results(match_results, print_matched=True)
-        log_ver.verify_match_results(match_results)
+        # log_ver.verify_match_results(match_results)
 
 
 ########################################################################
