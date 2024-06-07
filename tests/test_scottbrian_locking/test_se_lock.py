@@ -3717,6 +3717,9 @@ class TestSELockVerify:
                         timeout=1,
                     )
 
+        ################################################################
+        # get_lock
+        ################################################################
         def get_lock(
             gl_counts_and_q: CountsAndQ,
             req_type: SELockObtainMode,
@@ -3742,6 +3745,7 @@ class TestSELockVerify:
             )
 
             if req_type == SELockObtainMode.Exclusive:
+
                 if gl_counts_and_q.exp_real_owner_count == -1:
                     gl_counts_and_q.exp_excl_wait_count += 1
                 gl_counts_and_q.exp_owner_count = -1
@@ -3771,6 +3775,55 @@ class TestSELockVerify:
             return gl_counts_and_q
 
         ################################################################
+        # rel_lock
+        ################################################################
+        def rel_locks(rl_counts_and_q: CountsAndQ):
+            for thread_and_event in rl_counts_and_q.thread_event_pairs:
+                rl_counts_and_q.exp_real_q = rl_counts_and_q.exp_q.copy()
+
+                rl_counts_and_q.exp_real_owner_count = rl_counts_and_q.exp_owner_count
+                rl_counts_and_q.exp_real_excl_wait_count = (
+                    rl_counts_and_q.exp_excl_wait_count
+                )
+
+                lock_item = rl_counts_and_q.exp_q.pop(0)
+
+                if lock_item.mode == SELockObtainMode.Exclusive:
+                    rl_counts_and_q.exp_owner_count = 0
+                    for rem_lock_item in rl_counts_and_q.exp_q:
+                        if rem_lock_item.mode == SELockObtainMode.Share:
+                            rem_lock_item.event_flag = True
+                            rl_counts_and_q.exp_owner_count += 1
+                        else:
+                            if rl_counts_and_q.exp_owner_count == 0:
+                                rl_counts_and_q.exp_owner_count = -1
+                                rem_lock_item.event_flag = True
+                                rl_counts_and_q.exp_excl_wait_count -= 1
+                            break
+                else:
+                    rl_counts_and_q.exp_owner_count -= 1
+                    for rem_lock_item in rl_counts_and_q.exp_q:
+                        if rem_lock_item.mode == SELockObtainMode.Exclusive:
+                            if rl_counts_and_q.exp_owner_count == 0:
+                                rl_counts_and_q.exp_owner_count = -1
+                                rem_lock_item.event_flag = True
+                                rl_counts_and_q.exp_excl_wait_count -= 1
+                            break
+
+                thread_and_event.event.set()
+
+                verify_rtn(
+                    exp_q=rl_counts_and_q.exp_q,
+                    exp_real_q=rl_counts_and_q.exp_real_q,
+                    exp_owner_count=rl_counts_and_q.exp_owner_count,
+                    exp_real_owner_count=rl_counts_and_q.exp_real_owner_count,
+                    exp_excl_wait_count=rl_counts_and_q.exp_excl_wait_count,
+                    exp_real_excl_wait_count=rl_counts_and_q.exp_real_excl_wait_count,
+                )
+
+                thread_and_event.thread.join()
+
+        ################################################################
         # mainline
         ################################################################
         log_ver = LogVer(log_name="scottbrian_locking.se_lock")
@@ -3779,6 +3832,43 @@ class TestSELockVerify:
             "Request call sequence: python.py::pytest_pyfunc_call:[0-9]+ -> "
             "test_se_lock.py::TestSELockVerify.test_lock_multi_thread_verify:[0-9]+"
         )
+
+        esc_thread_name = re.escape(f"{threading.current_thread().name}")
+        obtain_call_seq = (
+            "test_se_lock.py::app_thread:[0-9]+ "
+            "-> se_lock.py::SELockObtain.__enter__:[0-9]+"
+        )
+        release_call_seq = (
+            "test_se_lock.py::app_thread:[0-9]+ "
+            "-> se_lock.py::SELockObtain.__exit__:[0-9]+"
+        )
+
+        immediate_grant_pattern = (
+            f"SELock {req_type_insert} obtain request granted immediate "
+            f"{grant_type_insert} control to thread {esc_thread_name}, "
+            f"call sequence: {obtain_call_seq}"
+        )
+
+        contention_grant_pattern = (
+            f"SELock {req_type_insert} obtain request for thread "
+            f"{esc_thread_name} waiting for SELock, timeout=None, "
+            f"call sequence: {f1_obtain_call_seq}"
+        )
+
+        f1_release_pattern = (
+            f"SELock release request removed {grant_type_insert} control for "
+            f"thread {esc_thread_name}, "
+            f"call sequence: {f1_release_call_seq}"
+        )
+
+        f1_release_grant_pattern = (
+            f"SELock release request for thread "
+            f"{esc_thread_name} "
+            f"granted {rel_grant_mode} control to waiting "
+            f"thread {granted_esc_thread}, "
+            f"call sequence: {release_call_seq}"
+        )
+        log_ver.add_pattern(pattern=f1_release_grant_pattern)
 
         a_lock = SELock()
         a_lock.verify_lock(
@@ -3810,16 +3900,20 @@ class TestSELockVerify:
                 req_type=SELockObtainMode.Share,
             )
 
-        for thread_event_pair in ml_counts_and_q.thread_event_pairs:
-            thread_event_pair.event.set()
-            thread_event_pair.thread.join()
+        ################################################################
+        # add log msg patterns
+        ################################################################
+        for lock_item in ml_counts_and_q.exp_q:
+            if lock_item.mode == SELockObtainMode.Share:
+
+        rel_locks(ml_counts_and_q)
 
         ################################################################
         # check log results
         ################################################################
         match_results = log_ver.get_match_results(caplog=caplog)
         log_ver.print_match_results(match_results, print_matched=True)
-        # log_ver.verify_match_results(match_results)
+        log_ver.verify_match_results(match_results)
 
 
 ########################################################################
