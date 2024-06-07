@@ -3643,8 +3643,6 @@ class TestSELockVerify:
             exp_real_owner_count: int = 0
             exp_excl_wait_count: int = 0
             exp_real_excl_wait_count: int = 0
-            shared_waiter_count_1: int = 0
-            shared_waiter_count_2: int = 0
 
         ################################################################
         # app_thread
@@ -3744,22 +3742,35 @@ class TestSELockVerify:
                 )
             )
 
+            esc_thread_name = re.escape(f"{a_thread.name}")
             if req_type == SELockObtainMode.Exclusive:
-
-                if gl_counts_and_q.exp_real_owner_count == -1:
-                    gl_counts_and_q.exp_excl_wait_count += 1
-                gl_counts_and_q.exp_owner_count = -1
-            else:
-                if gl_counts_and_q.exp_real_owner_count == -1:
-                    if gl_counts_and_q.exp_real_excl_wait_count == 0:
-                        gl_counts_and_q.shared_waiter_count_1 += 1
-                    else:
-                        gl_counts_and_q.shared_waiter_count_2 += 1
+                if gl_counts_and_q.exp_real_owner_count == 0:
+                    gl_counts_and_q.exp_owner_count = -1
+                    add_grant_pattern(
+                        req_type_insert="exclusive",
+                        grant_type_insert="exclusive",
+                        esc_thread_name=esc_thread_name,
+                    )
                 else:
-                    if gl_counts_and_q.exp_real_excl_wait_count == 0:
-                        gl_counts_and_q.exp_owner_count += 1
-                    else:
-                        gl_counts_and_q.shared_waiter_count_2 += 1
+                    gl_counts_and_q.exp_excl_wait_count += 1
+                    add_wait_pattern(
+                        req_type_insert="exclusive", esc_thread_name=esc_thread_name
+                    )
+            else:
+                if (
+                    gl_counts_and_q.exp_real_owner_count >= 0
+                    and gl_counts_and_q.exp_real_excl_wait_count == 0
+                ):
+                    gl_counts_and_q.exp_owner_count += 1
+                    add_grant_pattern(
+                        req_type_insert="share",
+                        grant_type_insert="shared",
+                        esc_thread_name=esc_thread_name,
+                    )
+                else:
+                    add_wait_pattern(
+                        req_type_insert="share", esc_thread_name=esc_thread_name
+                    )
 
             a_thread.start()
 
@@ -3788,19 +3799,39 @@ class TestSELockVerify:
 
                 lock_item = rl_counts_and_q.exp_q.pop(0)
 
+                esc_thread_name = re.escape(f"{thread_and_event.thread.name}")
+
                 if lock_item.mode == SELockObtainMode.Exclusive:
+                    add_rel_pattern(
+                        grant_type_insert="exclusive", esc_thread_name=esc_thread_name
+                    )
                     rl_counts_and_q.exp_owner_count = 0
                     for rem_lock_item in rl_counts_and_q.exp_q:
+                        granted_esc_thread = re.escape(f"{rem_lock_item.thread.name}")
                         if rem_lock_item.mode == SELockObtainMode.Share:
                             rem_lock_item.event_flag = True
                             rl_counts_and_q.exp_owner_count += 1
+                            add_rel_grant_pattern(
+                                rel_grant_mode="shared",
+                                esc_thread_name=esc_thread_name,
+                                granted_esc_thread=granted_esc_thread,
+                            )
                         else:
                             if rl_counts_and_q.exp_owner_count == 0:
                                 rl_counts_and_q.exp_owner_count = -1
                                 rem_lock_item.event_flag = True
                                 rl_counts_and_q.exp_excl_wait_count -= 1
+                                add_rel_grant_pattern(
+                                    rel_grant_mode="exclusive",
+                                    esc_thread_name=esc_thread_name,
+                                    granted_esc_thread=granted_esc_thread,
+                                )
                             break
+
                 else:
+                    add_rel_pattern(
+                        grant_type_insert="shared", esc_thread_name=esc_thread_name
+                    )
                     rl_counts_and_q.exp_owner_count -= 1
                     for rem_lock_item in rl_counts_and_q.exp_q:
                         if rem_lock_item.mode == SELockObtainMode.Exclusive:
@@ -3808,6 +3839,14 @@ class TestSELockVerify:
                                 rl_counts_and_q.exp_owner_count = -1
                                 rem_lock_item.event_flag = True
                                 rl_counts_and_q.exp_excl_wait_count -= 1
+                                granted_esc_thread = re.escape(
+                                    f"{rem_lock_item.thread.name}"
+                                )
+                                add_rel_grant_pattern(
+                                    rel_grant_mode="exclusive",
+                                    esc_thread_name=esc_thread_name,
+                                    granted_esc_thread=granted_esc_thread,
+                                )
                             break
 
                 thread_and_event.event.set()
@@ -3823,6 +3862,40 @@ class TestSELockVerify:
 
                 thread_and_event.thread.join()
 
+        def add_grant_pattern(
+            req_type_insert: str, grant_type_insert: str, esc_thread_name: str
+        ):
+            log_ver.add_pattern(
+                pattern=f"SELock {req_type_insert} obtain request granted immediate "
+                f"{grant_type_insert} control to thread {esc_thread_name}, "
+                f"call sequence: {obtain_call_seq}"
+            )
+
+        def add_wait_pattern(req_type_insert: str, esc_thread_name: str):
+            log_ver.add_pattern(
+                pattern=f"SELock {req_type_insert} obtain request for thread "
+                f"{esc_thread_name} waiting for SELock, timeout=None, "
+                f"call sequence: {obtain_call_seq}"
+            )
+
+        def add_rel_pattern(grant_type_insert: str, esc_thread_name: str):
+            log_ver.add_pattern(
+                pattern=f"SELock release request removed {grant_type_insert} control "
+                f"for thread {esc_thread_name} call sequence: "
+                f"{release_call_seq}"
+            )
+
+        def add_rel_grant_pattern(
+            rel_grant_mode: str,
+            esc_thread_name: str,
+            granted_esc_thread: str,
+        ):
+            log_ver.add_pattern(
+                pattern=f"SELock release request for thread {esc_thread_name} "
+                f"granted {rel_grant_mode} control to waiting thread "
+                f"{granted_esc_thread}, call sequence: {release_call_seq}"
+            )
+
         ################################################################
         # mainline
         ################################################################
@@ -3833,7 +3906,6 @@ class TestSELockVerify:
             "test_se_lock.py::TestSELockVerify.test_lock_multi_thread_verify:[0-9]+"
         )
 
-        esc_thread_name = re.escape(f"{threading.current_thread().name}")
         obtain_call_seq = (
             "test_se_lock.py::app_thread:[0-9]+ "
             "-> se_lock.py::SELockObtain.__enter__:[0-9]+"
@@ -3842,33 +3914,6 @@ class TestSELockVerify:
             "test_se_lock.py::app_thread:[0-9]+ "
             "-> se_lock.py::SELockObtain.__exit__:[0-9]+"
         )
-
-        immediate_grant_pattern = (
-            f"SELock {req_type_insert} obtain request granted immediate "
-            f"{grant_type_insert} control to thread {esc_thread_name}, "
-            f"call sequence: {obtain_call_seq}"
-        )
-
-        contention_grant_pattern = (
-            f"SELock {req_type_insert} obtain request for thread "
-            f"{esc_thread_name} waiting for SELock, timeout=None, "
-            f"call sequence: {f1_obtain_call_seq}"
-        )
-
-        f1_release_pattern = (
-            f"SELock release request removed {grant_type_insert} control for "
-            f"thread {esc_thread_name}, "
-            f"call sequence: {f1_release_call_seq}"
-        )
-
-        f1_release_grant_pattern = (
-            f"SELock release request for thread "
-            f"{esc_thread_name} "
-            f"granted {rel_grant_mode} control to waiting "
-            f"thread {granted_esc_thread}, "
-            f"call sequence: {release_call_seq}"
-        )
-        log_ver.add_pattern(pattern=f1_release_grant_pattern)
 
         a_lock = SELock()
         a_lock.verify_lock(
@@ -3899,12 +3944,6 @@ class TestSELockVerify:
                 gl_counts_and_q=ml_counts_and_q,
                 req_type=SELockObtainMode.Share,
             )
-
-        ################################################################
-        # add log msg patterns
-        ################################################################
-        for lock_item in ml_counts_and_q.exp_q:
-            if lock_item.mode == SELockObtainMode.Share:
 
         rel_locks(ml_counts_and_q)
 
