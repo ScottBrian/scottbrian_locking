@@ -740,7 +740,7 @@ class SELock:
                             "SELock release request for thread "
                             f"{threading.current_thread().name} "
                             f"granted exclusive control to waiting "
-                            f"thread {self.owner_wait_q[0].thread}, "
+                            f"thread {self.owner_wait_q[0].thread.name}, "
                             f"call sequence: {call_seq(latest=1, depth=2)}"
                         )
                     return  # all done
@@ -770,7 +770,7 @@ class SELock:
                                 f"SELock release request for thread "
                                 f"{threading.current_thread().name} "
                                 f"granted shared control to waiting "
-                                f"thread {item.thread}, "
+                                f"thread {item.thread.name}, "
                                 f"call sequence: {call_seq(latest=1, depth=2)}"
                             )
 
@@ -1078,6 +1078,7 @@ class SELock:
                     self.logger.error(error_msg)
                     raise LockVerifyError(error_msg)
                 time.sleep(0.1)
+                lock_info = self.get_info()
 
         if verify_structures:
             calc_owner_count = 0
