@@ -1069,7 +1069,7 @@ class SELock:
 
                 if timeout is None or timeout <= 0 or timer.is_expired():
                     error_msg = (
-                        f"lock_verify raising LockVerifyError. {exp_q=} , "
+                        f"lock_verify raising LockVerifyError. {exp_q=}, "
                         f"{lock_info.queue=}, {exp_owner_count=}, "
                         f"{lock_info.owner_count=}, {exp_excl_wait_count=}, "
                         f"{lock_info.excl_wait_count=}, {timeout=}. "

@@ -3607,9 +3607,7 @@ class TestSELockVerify:
     @pytest.mark.parametrize("num_share_grp4_arg", [0, 1, 2, 3])
     @pytest.mark.parametrize(
         "timeout_type_arg",
-        [  # TimeoutType.TimeoutFalse,
-            TimeoutType.TimeoutTrue
-        ],  # TimeoutType.TimeoutNone,
+        [TimeoutType.TimeoutNone, TimeoutType.TimeoutFalse, TimeoutType.TimeoutTrue],
     )
     def test_lock_multi_thread_verify(
         self,
@@ -3630,6 +3628,10 @@ class TestSELockVerify:
             timeout_type_arg: specifies whether to timeout
 
         """
+        req_sleep_time = 1
+        ver_sleep_time = 1
+        ver_false_timeout = 2
+        ver_true_timeout = 0.5
 
         @dataclass
         class ThreadEventPair:
@@ -3661,14 +3663,14 @@ class TestSELockVerify:
 
             """
             if timeout_type_arg != TimeoutType.TimeoutNone:
-                time.sleep(2)
+                time.sleep(req_sleep_time)
 
             with SELockObtain(se_lock=a_lock, obtain_mode=req_type):
                 log_ver.test_msg("app_thread has lock, about to wait")
                 app_event.wait()
                 log_ver.test_msg("app_thread has lock, back from wait")
                 if timeout_type_arg != TimeoutType.TimeoutNone:
-                    time.sleep(2)
+                    time.sleep(req_sleep_time)
             log_ver.test_msg("app_thread released lock")
 
         ################################################################
@@ -3681,9 +3683,10 @@ class TestSELockVerify:
             exp_real_owner_count: int,
             exp_excl_wait_count: int,
             exp_real_excl_wait_count: int,
+            ml_call_seq: str,
         ):
             if timeout_type_arg == TimeoutType.TimeoutNone:
-                time.sleep(1)  # make sure request is done before verify
+                time.sleep(ver_sleep_time)  # make sure request is done before verify
                 a_lock.verify_lock(
                     exp_q=exp_q,
                     exp_owner_count=exp_owner_count,
@@ -3696,42 +3699,44 @@ class TestSELockVerify:
                     exp_owner_count=exp_owner_count,
                     exp_excl_wait_count=exp_excl_wait_count,
                     verify_structures=True,
-                    timeout=4,
+                    timeout=ver_false_timeout,
                 )
             else:
-                # ml_error_msg = (
-                #     re.escape(
-                #         f"lock_verify raising LockVerifyError. {exp_q=}, "
-                #         f"lock_info.queue={exp_real_q}, {exp_owner_count=}, "
-                #         f"lock_info.owner_count={exp_real_owner_count}, "
-                #         f"{exp_excl_wait_count=}, "
-                #         f"lock_info.excl_wait_count={exp_real_excl_wait_count}, "
-                #         f"timeout=1. "
-                #     )
-                #     + ml_call_seq
-                # )
-                ml_error_msg = re.escape(
-                    f"lock_verify raising LockVerifyError. {exp_q=}, "
-                    f"lock_info.queue={exp_real_q}, {exp_owner_count=}, "
-                    f"lock_info.owner_count={exp_real_owner_count}, "
-                    # f"{exp_excl_wait_count=}, "
-                    # f"lock_info.excl_wait_count={exp_real_excl_wait_count}, "
-                    # f"timeout=1. "
-                )
-                log_ver.add_pattern(
-                    pattern=ml_error_msg, level=logging.ERROR, fullmatch=False
+                ml_error_msg = (
+                    re.escape(
+                        f"lock_verify raising LockVerifyError. {exp_q=}, "
+                        f"lock_info.queue={exp_real_q}, {exp_owner_count=}, "
+                        f"lock_info.owner_count={exp_real_owner_count}, "
+                        f"{exp_excl_wait_count=}, "
+                        f"lock_info.excl_wait_count={exp_real_excl_wait_count}, "
+                        f"timeout={ver_true_timeout}. "
+                    )
+                    + ml_call_seq
                 )
 
-                with pytest.raises(LockVerifyError):  # , match=ml_error_msg):
+                log_ver.add_pattern(
+                    pattern=ml_error_msg, level=logging.ERROR, fullmatch=True
+                )
+
+                with pytest.raises(LockVerifyError, match=ml_error_msg):
                     log_ver.test_msg("calling verify_lock")
                     a_lock.verify_lock(
                         exp_q=exp_q,
                         exp_owner_count=exp_owner_count,
                         exp_excl_wait_count=exp_excl_wait_count,
                         verify_structures=True,
-                        timeout=1,
+                        timeout=ver_true_timeout,
                     )
                     log_ver.test_msg("verify_lock returned")
+
+                # make sure we have the lock to maintain order
+                a_lock.verify_lock(
+                    exp_q=exp_q,
+                    exp_owner_count=exp_owner_count,
+                    exp_excl_wait_count=exp_excl_wait_count,
+                    verify_structures=True,
+                    timeout=ver_false_timeout,
+                )
 
         ################################################################
         # get_lock
@@ -3799,12 +3804,13 @@ class TestSELockVerify:
                 exp_real_owner_count=gl_counts_and_q.exp_real_owner_count,
                 exp_excl_wait_count=gl_counts_and_q.exp_excl_wait_count,
                 exp_real_excl_wait_count=gl_counts_and_q.exp_real_excl_wait_count,
+                ml_call_seq=ml_obtain_call_seq,
             )
 
             return gl_counts_and_q
 
         ################################################################
-        # rel_lock
+        # rel_locks
         ################################################################
         def rel_locks(rl_counts_and_q: CountsAndQ):
             for thread_and_event in rl_counts_and_q.thread_event_pairs:
@@ -3882,7 +3888,6 @@ class TestSELockVerify:
 
                 thread_and_event.event.set()
 
-                time.sleep(1)
                 verify_rtn(
                     exp_q=rl_counts_and_q.exp_q,
                     exp_real_q=rl_counts_and_q.exp_real_q,
@@ -3890,6 +3895,7 @@ class TestSELockVerify:
                     exp_real_owner_count=rl_counts_and_q.exp_real_owner_count,
                     exp_excl_wait_count=rl_counts_and_q.exp_excl_wait_count,
                     exp_real_excl_wait_count=rl_counts_and_q.exp_real_excl_wait_count,
+                    ml_call_seq=ml_release_call_seq,
                 )
 
                 thread_and_event.thread.join()
@@ -3933,8 +3939,13 @@ class TestSELockVerify:
         ################################################################
         log_ver = LogVer(log_name="scottbrian_locking.se_lock")
 
-        ml_call_seq = (
+        ml_obtain_call_seq = (
             "Request call sequence: test_se_lock.py::get_lock:[0-9]+ -> "
+            "test_se_lock.py::verify_rtn:[0-9]+"
+        )
+
+        ml_release_call_seq = (
+            "Request call sequence: test_se_lock.py::rel_locks:[0-9]+ -> "
             "test_se_lock.py::verify_rtn:[0-9]+"
         )
 
