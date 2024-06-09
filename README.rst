@@ -71,6 +71,9 @@ Release History
         * change docs/requirements.txt
         * change readthedoc.yml
 
+* 2.0.2
+    * Fix verify_lock to refresh lock_info
+    * Fix thread name in release granted log message
 
 Meta
 ====

@@ -379,7 +379,7 @@ class TestSELockErrors:
 
         ml_error_msg = (
             re.escape(
-                f"lock_verify raising LockVerifyError. exp_q={ml_exp_q} , "
+                f"lock_verify raising LockVerifyError. exp_q={ml_exp_q}, "
                 f"lock_info.queue=[], exp_owner_count=1, "
                 f"lock_info.owner_count=0, exp_excl_wait_count=0, "
                 f"lock_info.excl_wait_count=0, timeout=None. "
@@ -401,7 +401,7 @@ class TestSELockErrors:
 
         ml_error_msg = (
             re.escape(
-                f"lock_verify raising LockVerifyError. exp_q={ml_exp_q} , "
+                f"lock_verify raising LockVerifyError. exp_q={ml_exp_q}, "
                 f"lock_info.queue=[], exp_owner_count=1, "
                 f"lock_info.owner_count=0, exp_excl_wait_count=0, "
                 f"lock_info.excl_wait_count=0, timeout=None. "
@@ -423,7 +423,7 @@ class TestSELockErrors:
 
         ml_error_msg = (
             re.escape(
-                f"lock_verify raising LockVerifyError. exp_q={ml_exp_q} , "
+                f"lock_verify raising LockVerifyError. exp_q={ml_exp_q}, "
                 f"lock_info.queue=[], exp_owner_count=1, "
                 f"lock_info.owner_count=0, exp_excl_wait_count=0, "
                 f"lock_info.excl_wait_count=0, timeout=0. "
@@ -446,7 +446,7 @@ class TestSELockErrors:
 
         ml_error_msg = (
             re.escape(
-                f"lock_verify raising LockVerifyError. exp_q={ml_exp_q} , "
+                f"lock_verify raising LockVerifyError. exp_q={ml_exp_q}, "
                 f"lock_info.queue=[], exp_owner_count=1, "
                 f"lock_info.owner_count=0, exp_excl_wait_count=0, "
                 f"lock_info.excl_wait_count=0, timeout=0.1. "
@@ -469,7 +469,7 @@ class TestSELockErrors:
 
         ml_error_msg = (
             re.escape(
-                f"lock_verify raising LockVerifyError. exp_q={ml_exp_q} , "
+                f"lock_verify raising LockVerifyError. exp_q={ml_exp_q}, "
                 f"lock_info.queue=[], exp_owner_count=1, "
                 f"lock_info.owner_count=0, exp_excl_wait_count=0, "
                 f"lock_info.excl_wait_count=0, timeout=1. "
@@ -492,7 +492,7 @@ class TestSELockErrors:
 
         ml_error_msg = (
             re.escape(
-                f"lock_verify raising LockVerifyError. exp_q={ml_exp_q} , "
+                f"lock_verify raising LockVerifyError. exp_q={ml_exp_q}, "
                 f"lock_info.queue=[], exp_owner_count=1, "
                 f"lock_info.owner_count=0, exp_excl_wait_count=0, "
                 f"lock_info.excl_wait_count=0, timeout=1.23. "
@@ -2311,7 +2311,7 @@ class TestSELockBasic:
             )
             log_ver.add_pattern(pattern=f4_excl_release_pattern)
 
-            f5_esc_thread = re.escape(f"{f5_thread}")
+            f5_esc_thread = re.escape(f"{f5_thread.name}")
             f5_release_grant_pattern = (
                 "SELock release request for thread "
                 f"{f4_esc_thread_name} "
@@ -3228,7 +3228,7 @@ class TestSELock:
                 else:
                     rel_grant_mode = "exclusive"
 
-                granted_esc_thread = re.escape(f"{item.thread}")
+                granted_esc_thread = re.escape(f"{item.thread.name}")
 
                 f1_release_grant_pattern = (
                     f"SELock release request for thread "
@@ -3684,7 +3684,7 @@ class TestSELockVerify:
             exp_excl_wait_count: int,
             exp_real_excl_wait_count: int,
             ml_call_seq: str,
-        ):
+        ) -> None:
             if timeout_type_arg == TimeoutType.TimeoutNone:
                 time.sleep(ver_sleep_time)  # make sure request is done before verify
                 a_lock.verify_lock(
@@ -3744,7 +3744,7 @@ class TestSELockVerify:
         def get_lock(
             gl_counts_and_q: CountsAndQ,
             req_type: SELockObtainMode,
-        ):
+        ) -> CountsAndQ:
 
             a_event = threading.Event()
             a_thread = threading.Thread(target=app_thread, args=(req_type, a_event))
@@ -3812,7 +3812,7 @@ class TestSELockVerify:
         ################################################################
         # rel_locks
         ################################################################
-        def rel_locks(rl_counts_and_q: CountsAndQ):
+        def rel_locks(rl_counts_and_q: CountsAndQ) -> None:
             for thread_and_event in rl_counts_and_q.thread_event_pairs:
                 rl_counts_and_q.exp_real_q = rl_counts_and_q.exp_q.copy()
 
@@ -3902,21 +3902,21 @@ class TestSELockVerify:
 
         def add_grant_pattern(
             req_type_insert: str, grant_type_insert: str, esc_thread_name: str
-        ):
+        ) -> None:
             log_ver.add_pattern(
                 pattern=f"SELock {req_type_insert} obtain request granted immediate "
                 f"{grant_type_insert} control to thread {esc_thread_name}, "
                 f"call sequence: {obtain_call_seq}"
             )
 
-        def add_wait_pattern(req_type_insert: str, esc_thread_name: str):
+        def add_wait_pattern(req_type_insert: str, esc_thread_name: str) -> None:
             log_ver.add_pattern(
                 pattern=f"SELock {req_type_insert} obtain request for thread "
                 f"{esc_thread_name} waiting for SELock, timeout=None, "
                 f"call sequence: {obtain_call_seq}"
             )
 
-        def add_rel_pattern(grant_type_insert: str, esc_thread_name: str):
+        def add_rel_pattern(grant_type_insert: str, esc_thread_name: str) -> None:
             log_ver.add_pattern(
                 pattern=f"SELock release request removed {grant_type_insert} control "
                 f"for thread {esc_thread_name}, call sequence: "
@@ -3927,7 +3927,7 @@ class TestSELockVerify:
             rel_grant_mode: str,
             esc_thread_name: str,
             granted_esc_thread: str,
-        ):
+        ) -> None:
             log_ver.add_pattern(
                 pattern=f"SELock release request for thread {esc_thread_name} "
                 f"granted {rel_grant_mode} control to waiting thread "
