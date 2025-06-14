@@ -75,6 +75,9 @@ Release History
     * Fix verify_lock to refresh lock_info
     * Fix thread name in release granted log message
 
+* 2.1.0
+    * Support python 3.13
+
 Meta
 ====
 

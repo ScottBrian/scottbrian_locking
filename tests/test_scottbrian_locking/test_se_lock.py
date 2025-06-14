@@ -5,9 +5,11 @@
 ########################################################################
 from dataclasses import dataclass
 from enum import Enum, auto
+import inspect
 import itertools as it
 import logging
 import re
+import sys
 import threading
 import time
 from typing import Optional
@@ -1518,6 +1520,41 @@ class TestSELockBasic:
     """Class TestSELockBasic."""
 
     ####################################################################
+    # test_se_lock_correct_source
+    ####################################################################
+    def test_se_lock_correct_source(self) -> None:
+        """Test se lock correct source."""
+
+        # set the following four lines
+        library = "C:\\Users\\Tiger\\PycharmProjects\\"
+        project = "scottbrian_locking"
+        py_file = "se_lock.py"
+        class_to_use = SELock
+
+        file_prefix = (
+            f"{library}{project}\\.tox"
+            f"\\py{sys.version_info.major}{sys.version_info.minor}-"
+        )
+        file_suffix = f"\\Lib\\site-packages\\{project}\\{py_file}"
+
+        # exp1 = (
+        #     "C:\\Users\\Tiger\\PycharmProjects\\scottbrian_utils\\.tox"
+        #     f"\\py{sys.version_info.major}{sys.version_info.minor}-pytest"
+        #     f"\\Lib\\site-packages\\scottbrian_locking\\se_lock.py"
+        # )
+        # exp2 = (
+        #     "C:\\Users\\Tiger\\PycharmProjects\\scottbrian_utils\\.tox"
+        #     f"\\py{sys.version_info.major}{sys.version_info.minor}-coverage"
+        #     f"\\Lib\\site-packages\\"
+        #     "scottbrian_locking\\se_lock.py"
+        # )
+        pytest_run = f"{file_prefix}pytest{file_suffix}"
+        coverage_run = f"{file_prefix}coverage{file_suffix}"
+
+        actual = inspect.getsourcefile(class_to_use)
+        assert (actual == pytest_run) or (actual == coverage_run)
+
+    ####################################################################
     # test_se_wait_time_race
     ####################################################################
     @pytest.mark.parametrize("timeout_arg", (0, 0.5, 1))
@@ -2506,7 +2543,7 @@ class TestSELock:
     ####################################################################
     @pytest.mark.parametrize(
         "timeout_arg",
-        [0.1, 0.5, 12],
+        [0.1, 0.5, 4],
     )
     @pytest.mark.parametrize(
         "use_timeout_arg",
@@ -2765,7 +2802,7 @@ class TestSELock:
 
         a_lock = SELock()
 
-        to_low = timeout_arg
+        to_low = timeout_arg * 0.95
         to_high = timeout_arg * 1.3
 
         msgs_get_to = timeout_arg * 4 * 2
@@ -2783,98 +2820,245 @@ class TestSELock:
         ################################################################
         # excl 1
         ################################################################
-        log_ver.test_msg(log_msg="mainline about to request excl 1")
+        try:
+            log_ver.test_msg(log_msg="mainline about to request excl 1")
 
-        ml_esc_thread_name = re.escape(f"{ml_thread.name}")
+            ml_esc_thread_name = re.escape(f"{ml_thread.name}")
 
-        if ml_context_arg == ContextArg.NoContext:
-            ml_excl_call_seq = (
-                "python.py::pytest_pyfunc_call:[0-9]+ "
-                "-> test_se_lock.py::TestSELock.test_se_lock_timeout:[0-9]+"
-            )
-        elif ml_context_arg == ContextArg.ContextExclShare:
-            ml_excl_call_seq = (
-                "test_se_lock.py::TestSELock.test_se_lock_timeout:[0-9]+ "
-                "-> se_lock.py::SELockExcl.__enter__:[0-9]+"
-            )
-        else:
-            ml_excl_call_seq = (
-                "test_se_lock.py::TestSELock.test_se_lock_timeout:[0-9]+ "
-                "-> se_lock.py::SELockObtain.__enter__:[0-9]+"
-            )
-
-        ml_excl_wait_pattern = (
-            f"SELock exclusive obtain request for thread {ml_esc_thread_name} "
-            f"waiting for SELock, timeout={timeout_arg}, "
-            f"call sequence: {ml_excl_call_seq}"
-        )
-        log_ver.add_pattern(pattern=ml_excl_wait_pattern)
-
-        ml_excl_timeout_error_pattern = (
-            f"SELock exclusive obtain request for thread {ml_esc_thread_name} "
-            "raising SELockObtainTimeout because the thread has timed out "
-            "waiting for the current owner thread "
-            f"{f1_thread_name} to release the lock. "
-            f"Request call sequence: {ml_excl_call_seq}"
-        )
-        log_ver.add_pattern(pattern=ml_excl_timeout_error_pattern, level=logging.ERROR)
-
-        stop_watch.start_clock(clock_iter=1)
-        with pytest.raises(SELockObtainTimeout, match=ml_excl_timeout_error_pattern):
             if ml_context_arg == ContextArg.NoContext:
-                a_lock.obtain_excl(timeout=timeout_arg)
+                ml_excl_call_seq = (
+                    "python.py::pytest_pyfunc_call:[0-9]+ "
+                    "-> test_se_lock.py::TestSELock.test_se_lock_timeout:[0-9]+"
+                )
             elif ml_context_arg == ContextArg.ContextExclShare:
-                with SELockExcl(a_lock, timeout=timeout_arg):
-                    pass
+                ml_excl_call_seq = (
+                    "test_se_lock.py::TestSELock.test_se_lock_timeout:[0-9]+ "
+                    "-> se_lock.py::SELockExcl.__enter__:[0-9]+"
+                )
             else:
-                with SELockObtain(
-                    a_lock, obtain_mode=SELockObtainMode.Exclusive, timeout=timeout_arg
-                ):
-                    pass
+                ml_excl_call_seq = (
+                    "test_se_lock.py::TestSELock.test_se_lock_timeout:[0-9]+ "
+                    "-> se_lock.py::SELockObtain.__enter__:[0-9]+"
+                )
 
-        assert to_low <= stop_watch.duration() <= to_high
-
-        ################################################################
-        # share 1
-        ################################################################
-        log_ver.test_msg(log_msg="mainline about to request share 1")
-
-        if ml_context_arg == ContextArg.NoContext:
-            ml_share_call_seq = (
-                "python.py::pytest_pyfunc_call:[0-9]+ -> "
-                "test_se_lock.py::TestSELock.test_se_lock_timeout:[0-9]+"
+            ml_excl_wait_pattern = (
+                f"SELock exclusive obtain request for thread {ml_esc_thread_name} "
+                f"waiting for SELock, timeout={timeout_arg}, "
+                f"call sequence: {ml_excl_call_seq}"
             )
-        elif ml_context_arg == ContextArg.ContextExclShare:
-            ml_share_call_seq = (
-                "test_se_lock.py::TestSELock.test_se_lock_timeout:[0-9]+ "
-                "-> se_lock.py::SELockShare.__enter__:[0-9]+"
+            log_ver.add_pattern(pattern=ml_excl_wait_pattern)
+
+            ml_excl_timeout_error_pattern = (
+                f"SELock exclusive obtain request for thread {ml_esc_thread_name} "
+                "raising SELockObtainTimeout because the thread has timed out "
+                "waiting for the current owner thread "
+                f"{f1_thread_name} to release the lock. "
+                f"Request call sequence: {ml_excl_call_seq}"
             )
-        else:
-            ml_share_call_seq = (
-                "test_se_lock.py::TestSELock.test_se_lock_timeout:[0-9]+ "
-                "-> se_lock.py::SELockObtain.__enter__:[0-9]+"
+            log_ver.add_pattern(
+                pattern=ml_excl_timeout_error_pattern, level=logging.ERROR
             )
 
-        ml_share_wait_pattern = (
-            f"SELock share obtain request for thread {ml_esc_thread_name} "
-            f"waiting for SELock, timeout={timeout_arg}, "
-            f"call sequence: {ml_share_call_seq}"
-        )
-        log_ver.add_pattern(pattern=ml_share_wait_pattern)
+            stop_watch.start_clock(clock_iter=1)
+            with pytest.raises(
+                SELockObtainTimeout, match=ml_excl_timeout_error_pattern
+            ):
+                if ml_context_arg == ContextArg.NoContext:
+                    a_lock.obtain_excl(timeout=timeout_arg)
+                elif ml_context_arg == ContextArg.ContextExclShare:
+                    with SELockExcl(a_lock, timeout=timeout_arg):
+                        pass
+                else:
+                    with SELockObtain(
+                        a_lock,
+                        obtain_mode=SELockObtainMode.Exclusive,
+                        timeout=timeout_arg,
+                    ):
+                        pass
 
-        ml_share_timeout_error_pattern = (
-            f"SELock share obtain request for thread {ml_esc_thread_name} "
-            "raising SELockObtainTimeout because the thread has timed out "
-            "waiting for the current owner thread "
-            f"{f1_thread_name} to release the lock. "
-            f"Request call sequence: {ml_share_call_seq}"
-        )
-        log_ver.add_pattern(pattern=ml_share_timeout_error_pattern, level=logging.ERROR)
+            assert to_low <= stop_watch.duration() <= to_high
 
-        stop_watch.start_clock(clock_iter=2)
-        with pytest.raises(SELockObtainTimeout, match=ml_share_timeout_error_pattern):
+            ############################################################
+            # share 1
+            ############################################################
+            log_ver.test_msg(log_msg="mainline about to request share 1")
+
+            if ml_context_arg == ContextArg.NoContext:
+                ml_share_call_seq = (
+                    "python.py::pytest_pyfunc_call:[0-9]+ -> "
+                    "test_se_lock.py::TestSELock.test_se_lock_timeout:[0-9]+"
+                )
+            elif ml_context_arg == ContextArg.ContextExclShare:
+                ml_share_call_seq = (
+                    "test_se_lock.py::TestSELock.test_se_lock_timeout:[0-9]+ "
+                    "-> se_lock.py::SELockShare.__enter__:[0-9]+"
+                )
+            else:
+                ml_share_call_seq = (
+                    "test_se_lock.py::TestSELock.test_se_lock_timeout:[0-9]+ "
+                    "-> se_lock.py::SELockObtain.__enter__:[0-9]+"
+                )
+
+            ml_share_wait_pattern = (
+                f"SELock share obtain request for thread {ml_esc_thread_name} "
+                f"waiting for SELock, timeout={timeout_arg}, "
+                f"call sequence: {ml_share_call_seq}"
+            )
+            log_ver.add_pattern(pattern=ml_share_wait_pattern)
+
+            ml_share_timeout_error_pattern = (
+                f"SELock share obtain request for thread {ml_esc_thread_name} "
+                "raising SELockObtainTimeout because the thread has timed out "
+                "waiting for the current owner thread "
+                f"{f1_thread_name} to release the lock. "
+                f"Request call sequence: {ml_share_call_seq}"
+            )
+            log_ver.add_pattern(
+                pattern=ml_share_timeout_error_pattern, level=logging.ERROR
+            )
+
+            stop_watch.start_clock(clock_iter=2)
+            with pytest.raises(
+                SELockObtainTimeout, match=ml_share_timeout_error_pattern
+            ):
+                if ml_context_arg == ContextArg.NoContext:
+                    a_lock.obtain_share(timeout=timeout_arg)
+                elif ml_context_arg == ContextArg.ContextExclShare:
+                    with SELockShare(a_lock, timeout=timeout_arg):
+                        pass
+                else:
+                    with SELockObtain(
+                        a_lock, obtain_mode=SELockObtainMode.Share, timeout=timeout_arg
+                    ):
+                        pass
+            assert to_low <= stop_watch.duration() <= to_high
+
+            ############################################################
+            # excl 2
+            ############################################################
+            log_ver.test_msg(log_msg="mainline about to request excl 2")
+
+            log_ver.add_pattern(pattern=ml_excl_wait_pattern)
+            log_ver.add_pattern(
+                pattern=ml_excl_timeout_error_pattern, level=logging.ERROR
+            )
+
+            stop_watch.start_clock(clock_iter=3)
+            with pytest.raises(
+                SELockObtainTimeout, match=ml_excl_timeout_error_pattern
+            ):
+                if ml_context_arg == ContextArg.NoContext:
+                    a_lock.obtain_excl(timeout=timeout_arg)
+                elif ml_context_arg == ContextArg.ContextExclShare:
+                    with SELockExcl(a_lock, timeout=timeout_arg):
+                        pass
+                else:
+                    with SELockObtain(
+                        a_lock,
+                        obtain_mode=SELockObtainMode.Exclusive,
+                        timeout=timeout_arg,
+                    ):
+                        pass
+            assert to_low <= stop_watch.duration() <= to_high
+
+            ############################################################
+            # share 2
+            ############################################################
+            log_ver.test_msg(log_msg="mainline about to request share 2")
+
+            log_ver.add_pattern(pattern=ml_share_wait_pattern)
+            log_ver.add_pattern(
+                pattern=ml_share_timeout_error_pattern, level=logging.ERROR
+            )
+
+            stop_watch.start_clock(clock_iter=4)
+            with pytest.raises(
+                SELockObtainTimeout, match=ml_share_timeout_error_pattern
+            ):
+                if ml_context_arg == ContextArg.NoContext:
+                    a_lock.obtain_share(timeout=timeout_arg)
+                elif ml_context_arg == ContextArg.ContextExclShare:
+                    with SELockShare(a_lock, timeout=timeout_arg):
+                        pass
+                else:
+                    with SELockObtain(
+                        a_lock, obtain_mode=SELockObtainMode.Share, timeout=timeout_arg
+                    ):
+                        pass
+            assert to_low <= stop_watch.duration() <= to_high
+
+            msgs.queue_msg("beta")
+
+            log_ver.test_msg(log_msg="mainline about to wait 2")
+            msgs.get_msg("alpha")
+
+            ############################################################
+            # excl 3
+            ############################################################
+            log_ver.test_msg(log_msg="mainline about to request excl 3")
+
+            log_ver.add_pattern(pattern=ml_excl_wait_pattern)
+            log_ver.add_pattern(
+                pattern=ml_excl_timeout_error_pattern, level=logging.ERROR
+            )
+
+            stop_watch.start_clock(clock_iter=5)
+            with pytest.raises(
+                SELockObtainTimeout, match=ml_excl_timeout_error_pattern
+            ):
+                if ml_context_arg == ContextArg.NoContext:
+                    a_lock.obtain_excl(timeout=timeout_arg)
+                elif ml_context_arg == ContextArg.ContextExclShare:
+                    with SELockExcl(a_lock, timeout=timeout_arg):
+                        pass
+                else:
+                    with SELockObtain(
+                        a_lock,
+                        obtain_mode=SELockObtainMode.Exclusive,
+                        timeout=timeout_arg,
+                    ):
+                        pass
+            assert to_low <= stop_watch.duration() <= to_high
+
+            ############################################################
+            # share 3
+            ############################################################
+            log_ver.test_msg(log_msg="mainline about to request share 3")
+
+            ml_share_obtain_pattern = (
+                "SELock share obtain request granted immediate shared "
+                f"control to thread {ml_esc_thread_name}, "
+                f"call sequence: {ml_share_call_seq}"
+            )
+
+            log_ver.add_pattern(pattern=ml_share_obtain_pattern)
+
+            if ml_context_arg == ContextArg.NoContext:
+                ml_share_exit_seq = (
+                    "python.py::pytest_pyfunc_call:[0-9]+ -> "
+                    "test_se_lock.py::TestSELock.test_se_lock_timeout:[0-9]+"
+                )
+            elif ml_context_arg == ContextArg.ContextExclShare:
+                ml_share_exit_seq = (
+                    "test_se_lock.py::TestSELock.test_se_lock_timeout:[0-9]+ "
+                    "-> se_lock.py::SELockShare.__exit__:[0-9]+"
+                )
+            else:
+                ml_share_exit_seq = (
+                    "test_se_lock.py::TestSELock.test_se_lock_timeout:[0-9]+ "
+                    "-> se_lock.py::SELockObtain.__exit__:[0-9]+"
+                )
+
+            ml_share_release_pattern = (
+                f"SELock release request removed shared control for thread "
+                f"{ml_esc_thread_name}, "
+                f"call sequence: {ml_share_exit_seq}"
+            )
+            log_ver.add_pattern(pattern=ml_share_release_pattern)
+
             if ml_context_arg == ContextArg.NoContext:
                 a_lock.obtain_share(timeout=timeout_arg)
+                a_lock.release()
             elif ml_context_arg == ContextArg.ContextExclShare:
                 with SELockShare(a_lock, timeout=timeout_arg):
                     pass
@@ -2883,42 +3067,46 @@ class TestSELock:
                     a_lock, obtain_mode=SELockObtainMode.Share, timeout=timeout_arg
                 ):
                     pass
-        assert to_low <= stop_watch.duration() <= to_high
 
-        ################################################################
-        # excl 2
-        ################################################################
-        log_ver.test_msg(log_msg="mainline about to request excl 2")
+            ############################################################
+            # excl 4
+            ############################################################
+            log_ver.test_msg(log_msg="mainline about to request excl 4")
 
-        log_ver.add_pattern(pattern=ml_excl_wait_pattern)
-        log_ver.add_pattern(pattern=ml_excl_timeout_error_pattern, level=logging.ERROR)
+            log_ver.add_pattern(pattern=ml_excl_wait_pattern)
+            log_ver.add_pattern(
+                pattern=ml_excl_timeout_error_pattern, level=logging.ERROR
+            )
 
-        stop_watch.start_clock(clock_iter=3)
-        with pytest.raises(SELockObtainTimeout, match=ml_excl_timeout_error_pattern):
-            if ml_context_arg == ContextArg.NoContext:
-                a_lock.obtain_excl(timeout=timeout_arg)
-            elif ml_context_arg == ContextArg.ContextExclShare:
-                with SELockExcl(a_lock, timeout=timeout_arg):
-                    pass
-            else:
-                with SELockObtain(
-                    a_lock, obtain_mode=SELockObtainMode.Exclusive, timeout=timeout_arg
-                ):
-                    pass
-        assert to_low <= stop_watch.duration() <= to_high
+            stop_watch.start_clock(clock_iter=6)
+            with pytest.raises(
+                SELockObtainTimeout, match=ml_excl_timeout_error_pattern
+            ):
+                if ml_context_arg == ContextArg.NoContext:
+                    a_lock.obtain_excl(timeout=timeout_arg)
+                elif ml_context_arg == ContextArg.ContextExclShare:
+                    with SELockExcl(a_lock, timeout=timeout_arg):
+                        pass
+                else:
+                    with SELockObtain(
+                        a_lock,
+                        obtain_mode=SELockObtainMode.Exclusive,
+                        timeout=timeout_arg,
+                    ):
+                        pass
+            assert to_low <= stop_watch.duration() <= to_high
 
-        ################################################################
-        # share 2
-        ################################################################
-        log_ver.test_msg(log_msg="mainline about to request share 2")
+            ############################################################
+            # share 4
+            ############################################################
+            log_ver.test_msg(log_msg="mainline about to request share 4")
 
-        log_ver.add_pattern(pattern=ml_share_wait_pattern)
-        log_ver.add_pattern(pattern=ml_share_timeout_error_pattern, level=logging.ERROR)
+            log_ver.add_pattern(pattern=ml_share_obtain_pattern)
+            log_ver.add_pattern(pattern=ml_share_release_pattern)
 
-        stop_watch.start_clock(clock_iter=4)
-        with pytest.raises(SELockObtainTimeout, match=ml_share_timeout_error_pattern):
             if ml_context_arg == ContextArg.NoContext:
                 a_lock.obtain_share(timeout=timeout_arg)
+                a_lock.release()
             elif ml_context_arg == ContextArg.ContextExclShare:
                 with SELockShare(a_lock, timeout=timeout_arg):
                     pass
@@ -2927,127 +3115,10 @@ class TestSELock:
                     a_lock, obtain_mode=SELockObtainMode.Share, timeout=timeout_arg
                 ):
                     pass
-        assert to_low <= stop_watch.duration() <= to_high
+        finally:
+            msgs.queue_msg("beta")
+            f1_thread.join()
 
-        msgs.queue_msg("beta")
-
-        log_ver.test_msg(log_msg="mainline about to wait 2")
-        msgs.get_msg("alpha")
-
-        ################################################################
-        # excl 3
-        ################################################################
-        log_ver.test_msg(log_msg="mainline about to request excl 3")
-
-        log_ver.add_pattern(pattern=ml_excl_wait_pattern)
-        log_ver.add_pattern(pattern=ml_excl_timeout_error_pattern, level=logging.ERROR)
-
-        stop_watch.start_clock(clock_iter=5)
-        with pytest.raises(SELockObtainTimeout, match=ml_excl_timeout_error_pattern):
-            if ml_context_arg == ContextArg.NoContext:
-                a_lock.obtain_excl(timeout=timeout_arg)
-            elif ml_context_arg == ContextArg.ContextExclShare:
-                with SELockExcl(a_lock, timeout=timeout_arg):
-                    pass
-            else:
-                with SELockObtain(
-                    a_lock, obtain_mode=SELockObtainMode.Exclusive, timeout=timeout_arg
-                ):
-                    pass
-        assert to_low <= stop_watch.duration() <= to_high
-
-        ################################################################
-        # share 3
-        ################################################################
-        log_ver.test_msg(log_msg="mainline about to request share 3")
-
-        ml_share_obtain_pattern = (
-            "SELock share obtain request granted immediate shared "
-            f"control to thread {ml_esc_thread_name}, "
-            f"call sequence: {ml_share_call_seq}"
-        )
-
-        log_ver.add_pattern(pattern=ml_share_obtain_pattern)
-
-        if ml_context_arg == ContextArg.NoContext:
-            ml_share_exit_seq = (
-                "python.py::pytest_pyfunc_call:[0-9]+ -> "
-                "test_se_lock.py::TestSELock.test_se_lock_timeout:[0-9]+"
-            )
-        elif ml_context_arg == ContextArg.ContextExclShare:
-            ml_share_exit_seq = (
-                "test_se_lock.py::TestSELock.test_se_lock_timeout:[0-9]+ "
-                "-> se_lock.py::SELockShare.__exit__:[0-9]+"
-            )
-        else:
-            ml_share_exit_seq = (
-                "test_se_lock.py::TestSELock.test_se_lock_timeout:[0-9]+ "
-                "-> se_lock.py::SELockObtain.__exit__:[0-9]+"
-            )
-
-        ml_share_release_pattern = (
-            f"SELock release request removed shared control for thread "
-            f"{ml_esc_thread_name}, "
-            f"call sequence: {ml_share_exit_seq}"
-        )
-        log_ver.add_pattern(pattern=ml_share_release_pattern)
-
-        if ml_context_arg == ContextArg.NoContext:
-            a_lock.obtain_share(timeout=timeout_arg)
-            a_lock.release()
-        elif ml_context_arg == ContextArg.ContextExclShare:
-            with SELockShare(a_lock, timeout=timeout_arg):
-                pass
-        else:
-            with SELockObtain(
-                a_lock, obtain_mode=SELockObtainMode.Share, timeout=timeout_arg
-            ):
-                pass
-
-        ################################################################
-        # excl 4
-        ################################################################
-        log_ver.test_msg(log_msg="mainline about to request excl 4")
-
-        log_ver.add_pattern(pattern=ml_excl_wait_pattern)
-        log_ver.add_pattern(pattern=ml_excl_timeout_error_pattern, level=logging.ERROR)
-
-        stop_watch.start_clock(clock_iter=6)
-        with pytest.raises(SELockObtainTimeout, match=ml_excl_timeout_error_pattern):
-            if ml_context_arg == ContextArg.NoContext:
-                a_lock.obtain_excl(timeout=timeout_arg)
-            elif ml_context_arg == ContextArg.ContextExclShare:
-                with SELockExcl(a_lock, timeout=timeout_arg):
-                    pass
-            else:
-                with SELockObtain(
-                    a_lock, obtain_mode=SELockObtainMode.Exclusive, timeout=timeout_arg
-                ):
-                    pass
-        assert to_low <= stop_watch.duration() <= to_high
-
-        ################################################################
-        # share 4
-        ################################################################
-        log_ver.test_msg(log_msg="mainline about to request share 4")
-
-        log_ver.add_pattern(pattern=ml_share_obtain_pattern)
-        log_ver.add_pattern(pattern=ml_share_release_pattern)
-
-        if ml_context_arg == ContextArg.NoContext:
-            a_lock.obtain_share(timeout=timeout_arg)
-            a_lock.release()
-        elif ml_context_arg == ContextArg.ContextExclShare:
-            with SELockShare(a_lock, timeout=timeout_arg):
-                pass
-        else:
-            with SELockObtain(
-                a_lock, obtain_mode=SELockObtainMode.Share, timeout=timeout_arg
-            ):
-                pass
-
-        msgs.queue_msg("beta")
-        f1_thread.join()
         log_ver.test_msg(log_msg="mainline exiting")
 
         ################################################################
