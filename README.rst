@@ -78,6 +78,10 @@ Release History
 * 2.1.0
     * Support python 3.13
 
+* 2.1.1
+    * Support tox parallel
+
+
 Meta
 ====
 

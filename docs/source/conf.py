@@ -24,11 +24,11 @@ sys.path.insert(0, fspath(proj_dir / "src/scottbrian_locking"))
 # -- Project information -----------------------------------------------------
 
 project = "scottbrian_locking"
-copyright = "2021, 2023, Scott Tuttle"
+copyright = "2021, 2025, Scott Tuttle"
 author = "Scott Tuttle"
 
 # The full version, including alpha/beta/rc tags
-release = "2.1.0"
+release = "2.1.1"
 
 
 # -- General configuration ---------------------------------------------------
