@@ -1537,17 +1537,6 @@ class TestSELockBasic:
         )
         file_suffix = f"\\Lib\\site-packages\\{project}\\{py_file}"
 
-        # exp1 = (
-        #     "C:\\Users\\Tiger\\PycharmProjects\\scottbrian_utils\\.tox"
-        #     f"\\py{sys.version_info.major}{sys.version_info.minor}-pytest"
-        #     f"\\Lib\\site-packages\\scottbrian_locking\\se_lock.py"
-        # )
-        # exp2 = (
-        #     "C:\\Users\\Tiger\\PycharmProjects\\scottbrian_utils\\.tox"
-        #     f"\\py{sys.version_info.major}{sys.version_info.minor}-coverage"
-        #     f"\\Lib\\site-packages\\"
-        #     "scottbrian_locking\\se_lock.py"
-        # )
         pytest_run = f"{file_prefix}pytest{file_suffix}"
         coverage_run = f"{file_prefix}coverage{file_suffix}"
 
